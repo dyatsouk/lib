@@ -29,7 +29,8 @@ mafia/
 ├── roles.py        # Role enum and helpers
 ├── strategies.py   # Base strategy classes and simple default strategies
 ├── config.py       # Load strategy configuration from JSON/YAML files
-└── simulate.py     # Utility for running multiple games and collecting stats
+├── simulate.py     # Utility for running multiple games and collecting stats
+└── optimization/   # Helpers to tune strategy parameters via simulations
 ```
 
 ### Strategies
@@ -79,7 +80,8 @@ The number (`100` in the example) specifies how many games to simulate.
 
 Strategies and their parameters can be described in a JSON **or YAML** file.
 Each role is mapped to a strategy class name and optional constructor
-arguments. For example in JSON:
+arguments. For example in JSON. Sample YAML configurations are available
+in the ``example_configs`` directory:
 
 ```json
 {
@@ -101,6 +103,14 @@ The same configuration can be loaded programmatically with
 classes are located by name at runtime, so adding a new strategy class to
 ``mafia.strategies`` automatically makes it available to configuration files
 without further changes.
+
+### Parameter Optimisation
+
+The ``mafia.optimization`` package offers helpers for tuning strategy
+parameters. It runs batches of simulations and applies a simple
+hill-climbing search to discover parameter values that increase the win
+rate for a chosen role. See ``mafia/optimization/README.md`` for usage
+examples.
 
 ---
 This framework is intentionally lightweight; its main purpose is to provide a base for

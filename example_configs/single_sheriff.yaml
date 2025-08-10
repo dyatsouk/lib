@@ -1,0 +1,16 @@
+CIVILIAN:
+  strategy: SingleSheriffCivilianStrategy
+  params:
+    nomination_prob: 0.3
+SHERIFF:
+  strategy: SingleSheriffSheriffStrategy
+  params:
+    reveal_prob: 0.5
+MAFIA:
+  strategy: SingleSheriffMafiaStrategy
+  params:
+    nomination_prob: 0.2
+DON:
+  strategy: SingleSheriffDonStrategy
+  params:
+    nomination_prob: 0.2
