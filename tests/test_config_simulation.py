@@ -15,6 +15,8 @@ from mafia.strategies import (
     SheriffStrategy,
     SingleSheriffCivilianStrategy,
     SingleSheriffSheriffStrategy,
+    SingleSheriffMafiaStrategy,
+    SingleSheriffDonStrategy,
 )
 
 
@@ -62,8 +64,14 @@ def test_single_sheriff_aliases(tmp_path):
             "strategy": "SingleSheriffSheriffStrategy",
             "params": {"reveal_prob": 0.1},
         },
-        "MAFIA": {"strategy": "SingleSheriffMafiaStrategy"},
-        "DON": {"strategy": "SingleSheriffDonStrategy"},
+        "MAFIA": {
+            "strategy": "SingleSheriffMafiaStrategy",
+            "params": {"nomination_prob": 0.2},
+        },
+        "DON": {
+            "strategy": "SingleSheriffDonStrategy",
+            "params": {"nomination_prob": 0.25},
+        },
     }
     path = tmp_path / "single.json"
     with open(path, "w", encoding="utf-8") as fh:
@@ -75,11 +83,17 @@ def test_single_sheriff_aliases(tmp_path):
 
     civilian = next(p for p in game.players if p.role == Role.CIVILIAN)
     sheriff = next(p for p in game.players if p.role == Role.SHERIFF)
+    mafia = next(p for p in game.players if p.role == Role.MAFIA)
+    don = next(p for p in game.players if p.role == Role.DON)
 
     assert isinstance(civilian.strategy, SingleSheriffCivilianStrategy)
     assert civilian.strategy.random_nomination_chance == 0.4
     assert isinstance(sheriff.strategy, SingleSheriffSheriffStrategy)
     assert sheriff.strategy.reveal_probability == 0.1
+    assert isinstance(mafia.strategy, SingleSheriffMafiaStrategy)
+    assert mafia.strategy.nomination_prob == 0.2
+    assert isinstance(don.strategy, SingleSheriffDonStrategy)
+    assert don.strategy.nomination_prob == 0.25
 
 
 def test_simulate_games_with_config(tmp_path):
@@ -95,3 +109,45 @@ def test_simulate_games_with_config(tmp_path):
 
     results = simulate_games(2, config=path)
     assert sum(results.values()) == 2
+
+
+def test_load_yaml_config(tmp_path):
+    cfg = {
+        "CIVILIAN": {"strategy": "CivilianStrategy"},
+        "SHERIFF": {"strategy": "SheriffStrategy"},
+    }
+    path = tmp_path / "cfg.yaml"
+    import yaml
+
+    with open(path, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(cfg, fh)
+
+    config = load_config(path)
+    random.seed(0)
+    game = create_game(config=config)
+    civilian = next(p for p in game.players if p.role == Role.CIVILIAN)
+    sheriff = next(p for p in game.players if p.role == Role.SHERIFF)
+    assert isinstance(civilian.strategy, CivilianStrategy)
+    assert isinstance(sheriff.strategy, SheriffStrategy)
+
+
+def test_dynamic_strategy_lookup(tmp_path):
+    from mafia import strategies as strat
+
+    class DummyStrategy(strat.BaseStrategy):
+        """Simple strategy used to verify dynamic lookup."""
+
+        pass
+
+    setattr(strat, "DummyStrategy", DummyStrategy)
+    cfg = {"CIVILIAN": {"strategy": "DummyStrategy"}}
+    path = tmp_path / "custom.json"
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh)
+
+    config = load_config(path)
+    random.seed(0)
+    game = create_game(config=config)
+    civilian = next(p for p in game.players if p.role == Role.CIVILIAN)
+    assert isinstance(civilian.strategy, DummyStrategy)
+    delattr(strat, "DummyStrategy")
