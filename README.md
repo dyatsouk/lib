@@ -109,8 +109,20 @@ without further changes.
 The ``mafia.optimization`` package offers helpers for tuning strategy
 parameters. It runs batches of simulations and applies a simple
 hill-climbing search to discover parameter values that increase the win
-rate for a chosen role. See ``mafia/optimization/README.md`` for usage
-examples.
+rate for a chosen role. Multiple parameters per role can be tuned in a
+single run. Optimisations can be launched from the command line using a
+configuration file:
+
+```bash
+python -m mafia.optimization example_configs/optimization.yaml
+```
+
+Additional scenarios include optimising a single parameter
+(`example_configs/optimization_civilian.yaml`) or all parameters of a single
+role (`example_configs/optimization_sheriff.yaml`).
+
+See ``mafia/optimization/README.md`` for more details on the configuration
+format and further examples.
 
 ---
 This framework is intentionally lightweight; its main purpose is to provide a base for

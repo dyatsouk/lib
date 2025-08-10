@@ -1,0 +1,25 @@
+# Optimise all parameters for the sheriff while other roles stay fixed.
+params:
+  SHERIFF:
+    strategy: SheriffStrategy
+    params:
+      nomination_prob: 0.3
+      reveal_prob: 1.0
+base:
+  CIVILIAN:
+    strategy: CivilianStrategy
+    params:
+      nomination_prob: 0.3
+  MAFIA:
+    strategy: MafiaStrategy
+    params:
+      nomination_prob: 0.3
+  DON:
+    strategy: DonStrategy
+    params:
+      nomination_prob: 0.3
+games: 20
+rounds: 1
+step: 0.1
+target: CIVILIAN
+seed: 0
