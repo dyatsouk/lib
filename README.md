@@ -28,6 +28,7 @@ mafia/
 ├── player.py       # Player representation tying a role to a strategy
 ├── roles.py        # Role enum and helpers
 ├── strategies.py   # Base strategy classes and simple default strategies
+├── config.py       # Load strategy configuration from JSON files
 └── simulate.py     # Utility for running multiple games and collecting stats
 ```
 
@@ -71,6 +72,30 @@ python -m mafia.simulate 100
 ```
 
 The number (`100` in the example) specifies how many games to simulate.
+
+### Using a configuration file
+
+Strategies and their parameters can be described in a JSON file.  Each role
+is mapped to a strategy class name and optional constructor arguments.  For
+example:
+
+```json
+{
+  "CIVILIAN": {"strategy": "CivilianStrategy", "params": {"nomination_prob": 0.2}},
+  "SHERIFF": {"strategy": "SheriffStrategy", "params": {"reveal_prob": 0.8}},
+  "MAFIA": {"strategy": "MafiaStrategy", "params": {"nomination_prob": 0.3}},
+  "DON": {"strategy": "DonStrategy", "params": {"nomination_prob": 0.3}}
+}
+```
+
+Run simulations with the configuration via:
+
+```bash
+python -m mafia.simulate 100 --config config.json
+```
+
+The same configuration can be loaded programmatically with
+``mafia.config.load_config`` and passed to ``simulate_games``.
 
 ---
 This framework is intentionally lightweight; its main purpose is to provide a base for
