@@ -2,6 +2,8 @@ import random
 from typing import List, Optional
 
 from .actions import SpeechAction, SheriffClaim
+
+
 class BaseStrategy:
     """Base strategy implementing random behavior.
 
@@ -37,11 +39,22 @@ class CivilianStrategy(BaseStrategy):
     The civilian has no persistent state; it randomly nominates and votes
     among the alive players.
     """
+    def __init__(self, nomination_prob: float = 0.3):
+        """Initialise the strategy.
+
+        Parameters
+        ----------
+        nomination_prob : float, optional
+            Probability of issuing a random nomination when speaking,
+            by default ``0.3``.
+        """
+
+        self.nomination_prob = nomination_prob
 
     def speak(self, player, game) -> SpeechAction:
         alive = [p.pid for p in game.alive_players if p.pid != player.pid]
         nomination = None
-        if alive and random.random() < 0.3:
+        if alive and random.random() < self.nomination_prob:
             nomination = random.choice(alive)
         return SpeechAction(nomination=nomination)
 
@@ -56,11 +69,27 @@ class SheriffStrategy(CivilianStrategy):
     last_check : Optional[int]
         Player id of the most recent night check; used for nominations when
         a mafia member is discovered.
+    reveal_prob : float
+        Chance of publicly revealing a found mafia member during the day.
     """
 
-    def __init__(self):
+    def __init__(self, nomination_prob: float = 0.3, reveal_prob: float = 1.0):
+        """Initialise the sheriff strategy.
+
+        Parameters
+        ----------
+        nomination_prob : float, optional
+            Probability of nominating a random player when no information is
+            available, passed to :class:`CivilianStrategy`, by default ``0.3``.
+        reveal_prob : float, optional
+            Probability of publicly claiming when a mafia member was found,
+            by default ``1.0``.
+        """
+
+        super().__init__(nomination_prob)
         self.known = {}  # pid -> is_mafia
         self.last_check: Optional[int] = None
+        self.reveal_prob = reveal_prob
 
     def sheriff_check(self, player, game, candidates: List[int]) -> Optional[int]:
         unknown = [pid for pid in candidates if pid not in self.known]
@@ -70,9 +99,9 @@ class SheriffStrategy(CivilianStrategy):
         return target
 
     def speak(self, player, game) -> SpeechAction:
-        # If we found a mafia, claim and nominate
+        # If we found a mafia, reveal it with ``reveal_prob`` chance
         mafia_targets = [pid for pid, is_mafia in self.known.items() if is_mafia and game.is_alive(pid)]
-        if mafia_targets:
+        if mafia_targets and random.random() < self.reveal_prob:
             target = mafia_targets[0]
             claim = SheriffClaim(claimant=player.pid, target=target, is_mafia=True)
             return SpeechAction(nomination=target, claims=[claim])
@@ -95,15 +124,27 @@ class MafiaStrategy(BaseStrategy):
     ----------
     known_sheriff : Optional[int]
         Player id of the sheriff if discovered; prioritised for elimination.
+    nomination_prob : float
+        Chance of nominating a civilian during the day.
     """
 
-    def __init__(self):
+    def __init__(self, nomination_prob: float = 0.3):
+        """Initialise the mafia behaviour.
+
+        Parameters
+        ----------
+        nomination_prob : float, optional
+            Probability of nominating a civilian during speeches,
+            by default ``0.3``.
+        """
+
         self.known_sheriff: Optional[int] = None
+        self.nomination_prob = nomination_prob
 
     def speak(self, player, game) -> SpeechAction:
         civilians = [p.pid for p in game.alive_players if not p.role.is_mafia()]
         nomination = None
-        if civilians and random.random() < 0.3:
+        if civilians and random.random() < self.nomination_prob:
             nomination = random.choice(civilians)
         return SpeechAction(nomination=nomination)
 
@@ -130,8 +171,17 @@ class DonStrategy(MafiaStrategy):
         Player ids already investigated to avoid duplicate checks.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, nomination_prob: float = 0.3):
+        """Initialise the don strategy.
+
+        Parameters
+        ----------
+        nomination_prob : float, optional
+            Probability of nominating a civilian during the day, forwarded to
+            :class:`MafiaStrategy`, by default ``0.3``.
+        """
+
+        super().__init__(nomination_prob)
         self.checked: set[int] = set()
 
     def don_check(self, player, game, candidates: List[int]) -> Optional[int]:
@@ -173,7 +223,11 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
     which speeches have already been analysed.
     """
 
-    def __init__(self, random_nomination_chance: float = 0.3):
+    def __init__(
+        self,
+        random_nomination_chance: float = 0.3,
+        nomination_prob: float | None = None,
+    ):
         """Initialise the strategy.
 
         Parameters
@@ -181,7 +235,12 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
         random_nomination_chance : float, optional
             Probability of nominating a random player when no sheriff
             information is available, by default ``0.3``.
+        nomination_prob : float, optional
+            Alias for ``random_nomination_chance`` used by configuration files.
         """
+
+        if nomination_prob is not None:
+            random_nomination_chance = nomination_prob
 
         self.sheriff: Optional[int] = None
         self.checked_mafia: set[int] = set()
@@ -301,8 +360,28 @@ class SingleSheriffSheriffStrategy(SheriffStrategy):
     sheriff dies he publishes all check results in his last words.
     """
 
-    def __init__(self, reveal_probability: float = 0.5):
-        super().__init__()
+    def __init__(
+        self,
+        reveal_probability: float = 0.5,
+        nomination_prob: float = 0.3,
+        reveal_prob: float | None = None,
+    ):
+        """Initialise the SingleSheriff sheriff strategy.
+
+        Parameters
+        ----------
+        reveal_probability : float, optional
+            Chance of publicly revealing the role each day, by default ``0.5``.
+        nomination_prob : float, optional
+            Probability of nominating a random player while hidden,
+            forwarded to :class:`SheriffStrategy`, by default ``0.3``.
+        reveal_prob : float, optional
+            Alias for ``reveal_probability`` used by configuration files.
+        """
+
+        if reveal_prob is not None:
+            reveal_probability = reveal_prob
+        super().__init__(nomination_prob=nomination_prob)
         self.reveal_probability = reveal_probability
         self.revealed = False
 

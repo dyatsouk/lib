@@ -1,21 +1,47 @@
 import random
 from collections import Counter
-from typing import Dict
+from pathlib import Path
+from typing import Dict, Mapping, Tuple, Type
 
 from .roles import Role
 from .player import Player
-from .strategies import CivilianStrategy, SheriffStrategy, MafiaStrategy, DonStrategy
+from .strategies import (
+    BaseStrategy,
+    CivilianStrategy,
+    DonStrategy,
+    MafiaStrategy,
+    SheriffStrategy,
+)
 from .game import Game
 from .logger import GameLogger
 from .history import GameHistoryDB
+from .config import load_config
 
 
-def create_game(logger: GameLogger | None = None) -> Game:
+def create_game(
+    logger: GameLogger | None = None,
+    config: Mapping[Role, Tuple[Type[BaseStrategy], dict]] | None = None,
+) -> Game:
+    """Create a new game instance.
+
+    Parameters
+    ----------
+    logger : GameLogger, optional
+        Optional logger used to record game events.
+    config : mapping, optional
+        Mapping from :class:`Role` to ``(strategy_class, params)`` tuples as
+        produced by :func:`mafia.config.load_config`.  When omitted, default
+        strategies are used.
+    """
+
     roles = [Role.SHERIFF] + [Role.CIVILIAN] * 6 + [Role.DON] + [Role.MAFIA] * 2
     random.shuffle(roles)
     players = []
     for pid, role in enumerate(roles):
-        if role == Role.CIVILIAN:
+        if config and role in config:
+            strat_cls, params = config[role]
+            strat = strat_cls(**params)
+        elif role == Role.CIVILIAN:
             strat = CivilianStrategy()
         elif role == Role.SHERIFF:
             strat = SheriffStrategy()
@@ -31,12 +57,31 @@ def simulate_games(
     n: int,
     logger: GameLogger | None = None,
     db: GameHistoryDB | None = None,
+    config: Mapping[Role, Tuple[Type[BaseStrategy], dict]] | str | Path | None = None,
 ) -> Dict[Role, int]:
+    """Run ``n`` games and tally the winners.
+
+    Parameters
+    ----------
+    n : int
+        Number of games to simulate.
+    logger : GameLogger, optional
+        Logger used for recording events.
+    db : GameHistoryDB, optional
+        Optional database for storing summaries.
+    config : mapping or str or Path, optional
+        Either a configuration mapping or a path to a JSON configuration
+        file. When ``None`` the default strategies are used.
+    """
+
+    if isinstance(config, (str, Path)):
+        config = load_config(config)
+
     results = Counter()
     for i in range(n):
         if logger:
             logger.log(f"game {i + 1}")
-        game = create_game(logger)
+        game = create_game(logger, config)
         winner = game.run()
         results[winner] += 1
         if db:
@@ -58,13 +103,19 @@ if __name__ == "__main__":
         default=None,
         help="Path to SQLite database for storing game summaries (defaults to games.db)",
     )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to JSON file describing strategies for each role",
+    )
     args = parser.parse_args()
 
     logger = None
     if args.verbose or args.log:
         logger = GameLogger(verbose=args.verbose, log_to_file=args.log)
     db = GameHistoryDB(args.db) if args.db is not None else None
-    results = simulate_games(args.n, logger, db)
+    results = simulate_games(args.n, logger, db, config=args.config)
     if logger:
         logger.close()
     if db:
