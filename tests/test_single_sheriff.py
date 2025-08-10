@@ -102,6 +102,93 @@ def test_single_sheriff_civilian_strategy():
     assert speech.nomination == 1  # nominates checked mafia
 
 
+def test_civilians_follow_revealed_sheriff():
+    """All civilians should mirror a revealed sheriff's nomination and vote."""
+
+    players = [
+        Player(0, Role.SHERIFF, BaseStrategy()),
+        Player(1, Role.MAFIA, BaseStrategy()),
+        Player(2, Role.CIVILIAN, SingleSheriffCivilianStrategy()),
+        Player(3, Role.CIVILIAN, SingleSheriffCivilianStrategy()),
+    ]
+    game = Game(players)
+    game.current_speeches = [
+        SpeechLog(
+            speaker=0,
+            action=SpeechAction(
+                nomination=1,
+                claims=[SheriffClaim(0, 1, True)],
+            ),
+        )
+    ]
+
+    for pid in (2, 3):
+        speech = players[pid].speak(game)
+        assert speech.nomination == 1
+        vote = players[pid].vote(game, [1, 2, 3])
+        assert vote == 1
+
+
+def test_civilian_targeted_by_sheriff_nominate_elsewhere():
+    """A civilian accused by the sheriff should choose a different target."""
+
+    players = [
+        Player(0, Role.SHERIFF, BaseStrategy()),
+        Player(1, Role.MAFIA, BaseStrategy()),
+        Player(2, Role.CIVILIAN, SingleSheriffCivilianStrategy()),
+        Player(3, Role.CIVILIAN, SingleSheriffCivilianStrategy()),
+    ]
+    game = Game(players)
+    game.current_speeches = [
+        SpeechLog(
+            speaker=0,
+            action=SpeechAction(
+                nomination=2,
+                claims=[
+                    SheriffClaim(0, 2, True),
+                    SheriffClaim(0, 3, False),
+                ],
+            ),
+        )
+    ]
+
+    # Ensure nomination occurs by forcing random.random() to return 0.0
+    original_random = random.random
+    random.random = lambda: 0.0
+    try:
+        speech = players[2].speak(game)
+    finally:
+        random.random = original_random
+
+    assert speech.nomination == 1  # avoids self, sheriff and cleared civilian
+    vote = players[2].vote(game, [1, 2, 3])
+    assert vote == 1  # votes for alternative suspect
+
+
+def test_random_nomination_probability_configurable():
+    """Customising random nomination chance should influence behaviour."""
+
+    players = [
+        Player(
+            0,
+            Role.CIVILIAN,
+            SingleSheriffCivilianStrategy(random_nomination_chance=0.0),
+        ),
+        Player(1, Role.MAFIA, BaseStrategy()),
+    ]
+    game = Game(players)
+
+    # Force RNG low to prove that with probability 0 no nomination occurs.
+    original_random = random.random
+    random.random = lambda: 0.0
+    try:
+        speech = players[0].speak(game)
+    finally:
+        random.random = original_random
+
+    assert speech.nomination is None
+
+
 def test_single_sheriff_sheriff_reveals_after_death():
     # Even if the sheriff stayed hidden during the game, his last words should
     # reveal all check results.

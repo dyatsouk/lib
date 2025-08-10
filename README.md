@@ -56,8 +56,11 @@ The repository includes simple example strategies:
 * **DonStrategy** – in addition to mafia behaviour, checks for the sheriff at night and
   shares the information with fellow mafia members.
 * **SingleSheriff strategies** – a coordinated set where civilians trust the first
-  sheriff claimant, the sheriff may randomly reveal each day, and mafia focus on
-  eliminating the sheriff and his confirmed allies.
+  sheriff claimant. Once the sheriff reveals himself, civilians mirror his
+  nominations and votes (unless they are the nominated target) while mafia
+  focus on eliminating the sheriff and his confirmed allies. The civilian
+  behaviour exposes a ``random_nomination_chance`` parameter allowing
+  simulations to tune how often unaided civilians nominate at random.
 
 ## Running a Simulation
 

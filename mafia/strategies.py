@@ -161,19 +161,36 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
     _next_history_index : int
         Index into the game history indicating the next round to scan for
         claims.
+    random_nomination_chance : float
+        Base probability of issuing a random nomination when the civilian has
+        no guidance from the sheriff.
 
-    The strategy fully trusts the first sheriff claim it hears. It tracks
-    the sheriff's public checks and avoids nominating or voting for confirmed
-    civilians while prioritising confirmed mafia. To keep processing cheap
-    we remember which speeches have already been analysed.
+    The strategy fully trusts the first sheriff claim it hears. Once the
+    sheriff is revealed, civilians mirror the sheriff's nomination and vote
+    unless they themselves are the target. The strategy tracks the sheriff's
+    public checks and avoids nominating or voting for confirmed civilians
+    while prioritising confirmed mafia. To keep processing cheap we remember
+    which speeches have already been analysed.
     """
 
-    def __init__(self):
+    def __init__(self, random_nomination_chance: float = 0.3):
+        """Initialise the strategy.
+
+        Parameters
+        ----------
+        random_nomination_chance : float, optional
+            Probability of nominating a random player when no sheriff
+            information is available, by default ``0.3``.
+        """
+
         self.sheriff: Optional[int] = None
         self.checked_mafia: set[int] = set()
         self.checked_civilians: set[int] = set()
         self._processed_speeches: set[int] = set()
         self._next_history_index = 0
+        # Allow simulations to tune how often civilians nominate at random
+        # when they have no better information.
+        self.random_nomination_chance = random_nomination_chance
 
     def _update_claims(self, game):
         """Incorporate new sheriff claims from past and current speeches."""
@@ -199,10 +216,31 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
         self._processed_speeches.add(id(speech))
 
     def speak(self, player, game) -> SpeechAction:
+        """Return a speech aligning with trusted sheriff information."""
+
         self._update_claims(game)
+
+        # Prioritise nominating mafia that the sheriff has publicly checked.
         for target in self.checked_mafia:
-            if game.is_alive(target):
+            if target != player.pid and game.is_alive(target):
                 return SpeechAction(nomination=target)
+
+        if self.sheriff is not None:
+            # If the sheriff has spoken this round, mirror their nomination
+            # unless they nominated us.
+            sheriff_speech = next(
+                (s for s in game.current_speeches if s.speaker == self.sheriff),
+                None,
+            )
+            if (
+                sheriff_speech
+                and sheriff_speech.action.nomination is not None
+                and sheriff_speech.action.nomination != player.pid
+            ):
+                return SpeechAction(nomination=sheriff_speech.action.nomination)
+
+        # Otherwise pick randomly among alive players that are not cleared,
+        # excluding the sheriff himself.
         alive = [
             p.pid
             for p in game.alive_players
@@ -211,11 +249,16 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
         if self.sheriff is not None and self.sheriff in alive:
             alive.remove(self.sheriff)
         nomination = None
-        if alive and random.random() < 0.3:
+        # ``random_nomination_chance`` keeps the game dynamic by allowing
+        # occasional uninformed nominations.  It can be customised when the
+        # strategy is constructed to explore different civilian behaviours.
+        if alive and random.random() < self.random_nomination_chance:
             nomination = random.choice(alive)
         return SpeechAction(nomination=nomination)
 
     def vote(self, player, game, nominations: List[int]) -> Optional[int]:
+        """Choose a vote, mirroring the sheriff when possible."""
+
         self._update_claims(game)
         if self.sheriff is not None:
             sheriff_speech = next(
@@ -229,8 +272,16 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
                 and sheriff_speech.action.nomination in nominations
             ):
                 return sheriff_speech.action.nomination
-        mafia_targets = [pid for pid in nominations if pid in self.checked_mafia]
-        options = mafia_targets or [pid for pid in nominations if pid not in self.checked_civilians]
+        mafia_targets = [
+            pid
+            for pid in nominations
+            if pid in self.checked_mafia and pid != player.pid
+        ]
+        options = mafia_targets or [
+            pid
+            for pid in nominations
+            if pid not in self.checked_civilians and pid != player.pid
+        ]
         return random.choice(options) if options else None
 
 
