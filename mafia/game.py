@@ -89,25 +89,27 @@ class Game:
         don_check = None
         kill = None
 
-        # Sheriff check
-        sheriffs = [p for p in self.alive_players if p.role == Role.SHERIFF]
-        if sheriffs:
-            sheriff = sheriffs[0]
-            candidates = [p.pid for p in self.alive_players if p.pid != sheriff.pid]
-            target = sheriff.sheriff_check(self, candidates)
-            if target is not None and self.is_alive(target):
-                target_player = self.get_player(target)
-                result = target_player.role.is_mafia()
-                sheriff.strategy.remember(target, result)  # type: ignore
-                sheriff_check = CheckResult(checker=sheriff.pid, target=target, is_mafia=result)
+        # Mafia kill happens first
+        mafia_players = [p for p in self.alive_players if p.role.is_mafia()]
+        if mafia_players:
+            candidates = [p.pid for p in self.alive_players]
+            don = next((p for p in mafia_players if p.role == Role.DON), None)
+            if don:
+                kill = don.mafia_kill(self, candidates)
+            else:
+                suggestions = [m.mafia_kill(self, candidates) for m in mafia_players]
+                suggestions = [s for s in suggestions if s is not None]
+                if suggestions:
+                    kill = max(set(suggestions), key=suggestions.count)
+            if kill is not None and self.is_alive(kill):
+                self.get_player(kill).alive = False
 
-        # Don check
-        dons = [p for p in self.alive_players if p.role == Role.DON]
-        if dons:
-            don = dons[0]
-            candidates = [p.pid for p in self.alive_players if p.pid != don.pid]
+        # Don check after the kill
+        don = next((p for p in self.alive_players if p.role == Role.DON), None)
+        if don:
+            candidates = [p.pid for p in self.players if p.pid != don.pid]
             target = don.don_check(self, candidates)
-            if target is not None and self.is_alive(target):
+            if target is not None:
                 is_sheriff = self.get_player(target).role == Role.SHERIFF
                 don.strategy.checked.add(target)  # type: ignore
                 if is_sheriff:
@@ -116,14 +118,14 @@ class Game:
                             mafia.strategy.known_sheriff = target  # type: ignore
                 don_check = DonCheckResult(checker=don.pid, target=target, is_sheriff=is_sheriff)
 
-        # Mafia kill
-        mafia_players = [p for p in self.alive_players if p.role.is_mafia()]
-        if mafia_players:
-            candidates = [p.pid for p in self.alive_players if not p.role.is_mafia()]
-            suggestions = [m.mafia_kill(self, candidates) for m in mafia_players]
-            suggestions = [s for s in suggestions if s is not None]
-            if suggestions:
-                kill = max(set(suggestions), key=suggestions.count)
-                if self.is_alive(kill):
-                    self.get_player(kill).alive = False
+        # Sheriff check last
+        sheriff = next((p for p in self.alive_players if p.role == Role.SHERIFF), None)
+        if sheriff:
+            candidates = [p.pid for p in self.players if p.pid != sheriff.pid]
+            target = sheriff.sheriff_check(self, candidates)
+            if target is not None:
+                result = self.get_player(target).role.is_mafia()
+                sheriff.strategy.remember(target, result)  # type: ignore
+                sheriff_check = CheckResult(checker=sheriff.pid, target=target, is_mafia=result)
+
         return NightLog(sheriff_check=sheriff_check, don_check=don_check, kill=kill)
