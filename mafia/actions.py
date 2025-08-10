@@ -55,7 +55,7 @@ class DayLog:
 
     speeches: List[SpeechLog]
     votes: List[Vote]
-    eliminated: Optional[int]
+    eliminated: Optional[List[int]]
 
 @dataclass
 class NightLog:

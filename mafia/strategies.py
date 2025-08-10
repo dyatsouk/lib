@@ -19,6 +19,32 @@ class BaseStrategy:
     def vote(self, player, game, nominations: List[int]) -> Optional[int]:
         return random.choice(nominations) if nominations else None
 
+    def vote_elimination(self, player, game, candidates: List[int]) -> bool:
+        """Decide whether all tied candidates should be eliminated.
+
+        Parameters
+        ----------
+        player : Player
+            Acting player instance.
+        game : Game
+            Current game state.
+        candidates : list[int]
+            Player ids tied after a revote.
+
+        Returns
+        -------
+        bool
+            ``True`` to eliminate all tied players, ``False`` to keep them.
+
+        Notes
+        -----
+        The base implementation is conservative and always votes against
+        eliminating all tied candidates. Strategies can override this method
+        to implement custom behaviour.
+        """
+
+        return False
+
     # Night actions: subclasses may override
     def sheriff_check(self, player, game, candidates: List[int]) -> Optional[int]:
         return None

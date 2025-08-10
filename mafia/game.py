@@ -73,6 +73,14 @@ class Game:
 
     # Day phase
     def day_phase(self, day_no: int) -> DayLog:
+        """Run speeches, nominations and voting for a single day.
+
+        Handles two-stage tie resolution: if the first vote ties, a revote is
+        held among the tied candidates. Should the revote also tie, players
+        vote on eliminating all tied candidates and an absolute majority is
+        required to remove them.
+        """
+
         if self.logger:
             self.logger.log(f"day {day_no}")
         speeches = []
@@ -131,46 +139,88 @@ class Game:
             self.logger.log(f"day {day_no} voting")
         for player in self.alive_players:
             vote_target = player.vote(self, nominations)
-            # If nominations exist, force a valid choice; abstaining is not allowed.
-            if nominations and vote_target not in nominations:
-                vote_target = random.choice(nominations)
-            votes.append(Vote(voter=player.pid, target=vote_target))
-            if nominations and vote_target is not None:
+            if nominations:
+                # Force a valid vote choice; abstaining defaults to the last nomination.
+                if vote_target not in nominations:
+                    vote_target = nominations[-1]
+                votes.append(Vote(voter=player.pid, target=vote_target))
                 vote_counts[vote_target] += 1
-            if self.logger:
-                if nominations and vote_target is not None:
+                if self.logger:
                     self.logger.log(
                         f"player {player.pid + 1} votes for player {vote_target + 1}"
                     )
-                else:
+            else:
+                # No nominations: players effectively abstain.
+                votes.append(Vote(voter=player.pid, target=None))
+                if self.logger:
                     self.logger.log(f"player {player.pid + 1} abstains")
-        eliminated = None
+
+        eliminated: List[int] = []
         if vote_counts:
             max_votes = max(vote_counts.values())
             top = [pid for pid, count in vote_counts.items() if count == max_votes]
             if len(top) == 1:
-                eliminated = top[0]
-                self.players[eliminated].alive = False
-        if self.logger:
-            if eliminated is not None:
-                self.logger.log(f"player {eliminated + 1} is eliminated")
+                eliminated = top
             else:
+                # Re-run voting with only the tied candidates.
+                # Every player votes again exactly once.
+                if self.logger:
+                    self.logger.log("tie detected, revoting")
+                revote_counts = {pid: 0 for pid in top}
+                for player in self.alive_players:
+                    vote_target = player.vote(self, top)
+                    if vote_target not in top:
+                        # Abstention in revote still defaults to the last candidate.
+                        vote_target = top[-1]
+                    votes.append(Vote(voter=player.pid, target=vote_target))
+                    revote_counts[vote_target] += 1
+                    if self.logger:
+                        self.logger.log(
+                            f"player {player.pid + 1} revotes for player {vote_target + 1}"
+                        )
+                max_votes = max(revote_counts.values())
+                top = [pid for pid, count in revote_counts.items() if count == max_votes]
+                if len(top) == 1:
+                    eliminated = top
+                else:
+                    # Final vote: should all tied players be eliminated?
+                    # Absolute majority of "yes" votes eliminates them.
+                    if self.logger:
+                        self.logger.log("revote tie, voting on elimination")
+                    yes_votes = sum(
+                        1 for p in self.alive_players if p.vote_elimination(self, top)
+                    )
+                    if yes_votes > len(self.alive_players) // 2:
+                        eliminated = top
+
+        if eliminated:
+            for pid in eliminated:
+                self.players[pid].alive = False
+            if self.logger:
+                if len(eliminated) == 1:
+                    self.logger.log(f"player {eliminated[0] + 1} is eliminated")
+                else:
+                    elim_str = ", ".join(str(pid + 1) for pid in eliminated)
+                    self.logger.log(f"players {elim_str} are eliminated")
+        else:
+            if self.logger:
                 self.logger.log("no elimination")
 
-        # Eliminated player's last words
-        if eliminated is not None:
-            player = self.get_player(eliminated)
-            action = player.last_words(self)
-            action.nomination = None
-            speech = SpeechLog(speaker=player.pid, action=action)
-            speeches.append(speech)
-            self.current_speeches.append(speech)
-            if action.claims and self.logger:
-                for claim in action.claims:
-                    res = "mafia" if claim.is_mafia else "not mafia"
-                    self.logger.log(
-                        f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
-                    )
+        # Eliminated players' last words in the order they were nominated.
+        if eliminated:
+            for pid in eliminated:  # order preserved from vote_counts
+                player = self.get_player(pid)
+                action = player.last_words(self)
+                action.nomination = None
+                speech = SpeechLog(speaker=player.pid, action=action)
+                speeches.append(speech)
+                self.current_speeches.append(speech)
+                if action.claims and self.logger:
+                    for claim in action.claims:
+                        res = "mafia" if claim.is_mafia else "not mafia"
+                        self.logger.log(
+                            f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
+                        )
 
         # determine next day's starting player
         if ordered_players:
@@ -180,7 +230,9 @@ class Game:
                 self.day_start_pid = alive_after[0].pid
             else:
                 self.day_start_pid = next((p.pid for p in self.players if p.alive), 0)
-        return DayLog(speeches=speeches, votes=votes, eliminated=eliminated)
+        return DayLog(
+            speeches=speeches, votes=votes, eliminated=eliminated or None
+        )
 
     # Night phase
     def night_phase(self, night_no: int) -> NightLog:

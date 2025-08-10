@@ -73,7 +73,7 @@ def test_eliminated_player_speaks_after_vote():
     ]
     game = Game(players)
     day = game.day_phase(1)
-    assert day.eliminated == 0
+    assert day.eliminated == [0]
     assert day.speeches[-1].speaker == 0  # eliminated player speaks last
     assert day.speeches[-1].action.nomination is None  # no nomination allowed
 
