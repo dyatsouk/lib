@@ -23,6 +23,25 @@ class Player:
     def vote(self, game, nominations):
         return self.strategy.vote(self, game, nominations)
 
+    def vote_elimination(self, game, candidates):
+        """Decide whether all tied candidates should be eliminated.
+
+        Parameters
+        ----------
+        game : Game
+            Current game instance.
+        candidates : list[int]
+            Player ids who remain tied after a revote.
+
+        Returns
+        -------
+        bool
+            ``True`` if the player supports eliminating all tied candidates,
+            ``False`` otherwise.
+        """
+
+        return self.strategy.vote_elimination(self, game, candidates)
+
     def sheriff_check(self, game, candidates):
         return self.strategy.sheriff_check(self, game, candidates)
 

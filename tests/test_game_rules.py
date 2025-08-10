@@ -6,10 +6,19 @@ from mafia.strategies import BaseStrategy, SheriffStrategy
 
 
 class NominateAbstainStrategy(BaseStrategy):
-    """Strategy that nominates player 1 but attempts to abstain from voting."""
+    """Strategy that nominates a chosen player but abstains from voting.
+
+    Parameters
+    ----------
+    nomination_target : int, optional
+        Player id to nominate during ``speak``, by default ``1``.
+    """
+
+    def __init__(self, nomination_target=1):
+        self.nomination_target = nomination_target
 
     def speak(self, player, game):
-        return SpeechAction(nomination=1)
+        return SpeechAction(nomination=self.nomination_target)
 
     def vote(self, player, game, nominations):
         return None
@@ -45,6 +54,27 @@ class KillSheriffStrategy(BaseStrategy):
         return 0
 
 
+class FixedVotingStrategy(BaseStrategy):
+    """Deterministic strategy used for tie-vote resolution tests."""
+
+    def __init__(self, nomination, first_vote, second_vote, eliminate):
+        self.nomination = nomination
+        self.first_vote = first_vote
+        self.second_vote = second_vote
+        self.eliminate = eliminate
+        self._vote_count = 0
+
+    def speak(self, player, game):
+        return SpeechAction(nomination=self.nomination)
+
+    def vote(self, player, game, nominations):
+        self._vote_count += 1
+        return self.first_vote if self._vote_count == 1 else self.second_vote
+
+    def vote_elimination(self, player, game, candidates):
+        return self.eliminate
+
+
 # Test 1: voting enforcement
 
 def test_players_cannot_abstain_when_candidates_exist():
@@ -55,6 +85,20 @@ def test_players_cannot_abstain_when_candidates_exist():
     game = Game(players)
     day = game.day_phase(1)
     assert all(v.target == 1 for v in day.votes)
+
+
+def test_abstaining_vote_defaults_to_last_nominee():
+    """When multiple candidates exist, abstainers vote for the last nomination."""
+
+    players = [
+        Player(0, Role.CIVILIAN, NominateAbstainStrategy(1)),
+        Player(1, Role.CIVILIAN, NominateAbstainStrategy(2)),
+        Player(2, Role.CIVILIAN, AbstainStrategy()),
+    ]
+    game = Game(players)
+    day = game.day_phase(1)
+    assert all(v.target == 2 for v in day.votes)
+    assert day.eliminated == [2]
 
 
 # Test 2: logging when night victim has no claims
@@ -87,3 +131,35 @@ def test_sheriff_killed_still_checks():
     assert night.sheriff_check is not None
     assert night.sheriff_check.target == 1
     assert not players[0].alive
+
+
+def test_tied_candidates_eliminated_after_majority():
+    """Tied players are eliminated if majority votes for mass elimination."""
+
+    players = [
+        Player(0, Role.CIVILIAN, FixedVotingStrategy(1, 1, 1, True)),
+        Player(1, Role.CIVILIAN, FixedVotingStrategy(2, 2, 2, False)),
+        Player(2, Role.CIVILIAN, FixedVotingStrategy(1, 1, 1, True)),
+        Player(3, Role.CIVILIAN, FixedVotingStrategy(None, 2, 2, True)),
+    ]
+    game = Game(players)
+    day = game.day_phase(1)
+    assert day.eliminated == [1, 2]
+    assert not players[1].alive and not players[2].alive
+    assert len(day.votes) == 8  # two rounds of voting
+
+
+def test_tied_candidates_spared_without_majority():
+    """No elimination occurs if majority opposes mass elimination."""
+
+    players = [
+        Player(0, Role.CIVILIAN, FixedVotingStrategy(1, 1, 1, False)),
+        Player(1, Role.CIVILIAN, FixedVotingStrategy(2, 2, 2, False)),
+        Player(2, Role.CIVILIAN, FixedVotingStrategy(1, 1, 1, True)),
+        Player(3, Role.CIVILIAN, FixedVotingStrategy(None, 2, 2, False)),
+    ]
+    game = Game(players)
+    day = game.day_phase(1)
+    assert day.eliminated is None
+    assert all(p.alive for p in players)
+    assert len(day.votes) == 8

@@ -12,7 +12,7 @@ The implementation roughly follows the [sports mafia rules](https://dom-mafia.ru
 * Roles consist of seven civilians (one of which is the **sheriff**) and three mafia members (one of which is the **don**).
 * The game alternates between **day** and **night** phases.
   * During the day each alive player may nominate at most one opponent for elimination and may claim to be the sheriff revealing a check result.
-  * After speeches all alive players vote on the nominated candidates. If at least one candidate exists every player must cast a vote. The player with the most votes is eliminated; ties result in no elimination.
+  * After speeches all alive players vote on the nominated candidates. If at least one candidate exists every player must cast a vote; failing to choose assigns the vote to the last nominated player. The player with the most votes is eliminated. When multiple candidates tie for the most votes, a revote is held among the tied players. If the revote also ties, the table votes on whether all tied players should be eliminated. An absolute majority eliminates all of them; otherwise nobody is removed.
   * At night special roles act:
     * The sheriff secretly checks a player and learns if they are mafia. If the sheriff is killed during the night they still perform this final check before dying at dawn.
     * The don searches for the sheriff.

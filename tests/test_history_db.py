@@ -18,7 +18,7 @@ def _make_game(nominations: int, kill: bool, elimination: bool):
         SpeechLog(speaker=0, action=SpeechAction(nomination=1))
         for _ in range(nominations)
     ]
-    day = DayLog(speeches=speeches, votes=[], eliminated=1 if elimination else None)
+    day = DayLog(speeches=speeches, votes=[], eliminated=[1] if elimination else None)
     night = NightLog(
         sheriff_check=None, don_check=None, kill=0 if kill else None
     )
