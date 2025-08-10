@@ -5,6 +5,13 @@ from .strategies import BaseStrategy
 
 @dataclass
 class Player:
+    """Representation of a single game participant.
+
+    Each player has a unique ``pid``, an assigned :class:`Role` and a
+    strategy object that decides their actions.  The ``alive`` flag tracks
+    whether the player is still active in the game.
+    """
+
     pid: int
     role: Role
     strategy: BaseStrategy

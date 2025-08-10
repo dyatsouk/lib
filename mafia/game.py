@@ -15,8 +15,9 @@ from .actions import (
     RoundLog,
 )
 
-
 class Game:
+    """Main game engine coordinating day and night cycles."""
+
     def __init__(self, players: List[Player], logger: Optional[GameLogger] = None):
         self.players = players
         self.history: List[RoundLog] = []
@@ -89,12 +90,15 @@ class Game:
             speech = SpeechLog(speaker=victim.pid, action=action)
             speeches.append(speech)
             self.current_speeches.append(speech)
-            if action.claims and self.logger:
-                for claim in action.claims:
-                    res = "mafia" if claim.is_mafia else "not mafia"
-                    self.logger.log(
-                        f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
-                    )
+            if self.logger:
+                if action.claims:
+                    for claim in action.claims:
+                        res = "mafia" if claim.is_mafia else "not mafia"
+                        self.logger.log(
+                            f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
+                        )
+                else:
+                    self.logger.log(f"player {victim.pid + 1} has no claims")
 
         alive = self.alive_players
         start_index = 0
@@ -127,11 +131,14 @@ class Game:
             self.logger.log(f"day {day_no} voting")
         for player in self.alive_players:
             vote_target = player.vote(self, nominations)
+            # If nominations exist, force a valid choice; abstaining is not allowed.
+            if nominations and vote_target not in nominations:
+                vote_target = random.choice(nominations)
             votes.append(Vote(voter=player.pid, target=vote_target))
-            if vote_target in vote_counts:
+            if nominations and vote_target is not None:
                 vote_counts[vote_target] += 1
             if self.logger:
-                if vote_target is not None:
+                if nominations and vote_target is not None:
                     self.logger.log(
                         f"player {player.pid + 1} votes for player {vote_target + 1}"
                     )
@@ -196,7 +203,12 @@ class Game:
                 if suggestions:
                     kill = max(set(suggestions), key=suggestions.count)
             if kill is not None and self.is_alive(kill):
-                self.get_player(kill).alive = False
+                victim = self.get_player(kill)
+                if victim.role == Role.SHERIFF:
+                    # Sheriff remains alive until the end of the night to perform a final check
+                    pass
+                else:
+                    victim.alive = False
                 if self.logger:
                     self.logger.log(f"mafia kill player {kill + 1}")
             elif self.logger:
@@ -205,7 +217,7 @@ class Game:
         # Don check after the kill
         don = next((p for p in self.alive_players if p.role == Role.DON), None)
         if don:
-            candidates = [p.pid for p in self.players if p.pid != don.pid]
+            candidates = [p.pid for p in self.players if p.pid != don.pid and p.pid != kill]
             target = don.don_check(self, candidates)
             if target is not None:
                 is_sheriff = self.get_player(target).role == Role.SHERIFF
@@ -224,7 +236,7 @@ class Game:
         # Sheriff check last
         sheriff = next((p for p in self.alive_players if p.role == Role.SHERIFF), None)
         if sheriff:
-            candidates = [p.pid for p in self.players if p.pid != sheriff.pid]
+            candidates = [p.pid for p in self.players if p.pid != sheriff.pid and p.pid != kill]
             target = sheriff.sheriff_check(self, candidates)
             if target is not None:
                 result = self.get_player(target).role.is_mafia()
@@ -235,6 +247,10 @@ class Game:
                     self.logger.log(
                         f"sheriff checks player {target + 1}: {res}"
                     )
+
+        # Apply delayed kill (sheriff remains alive for the check)
+        if kill is not None and self.is_alive(kill):
+            self.get_player(kill).alive = False
 
         return NightLog(sheriff_check=sheriff_check, don_check=don_check, kill=kill)
 
