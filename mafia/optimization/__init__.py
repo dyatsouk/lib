@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Mapping, Tuple, Type
 
 from ..roles import Role
 from ..strategies import BaseStrategy
 from ..simulate import simulate_games
+from .config import load_optimisation_config
 
 
 @dataclass
@@ -84,8 +86,12 @@ def optimise_parameter(
     )
 
     def evaluate(value: float) -> float:
+        # Merge existing parameters for the role with the trial value so that
+        # already optimised parameters remain in effect during evaluation.
         cfg = config.copy()
-        cfg[role] = (strategy, {param: value})
+        existing = dict(cfg.get(role, (strategy, {}))[1])
+        existing[param] = value
+        cfg[role] = (strategy, existing)
         if seed is not None:
             random.seed(seed)
         results = simulate_games(games, config=cfg)
@@ -109,24 +115,26 @@ def optimise_parameter(
 
 
 def optimise_all(
-    params: Mapping[Role, Tuple[Type[BaseStrategy], str, float]],
+    params: Mapping[Role, Tuple[Type[BaseStrategy], Mapping[str, float]]],
     *,
     step: float = 0.1,
     games: int = 50,
     rounds: int = 3,
     target: Role | None = None,
     seed: int | None = None,
-) -> Dict[Role, OptimisationResult]:
+    base_config: Mapping[Role, Tuple[Type[BaseStrategy], dict]] | None = None,
+) -> Dict[Role, Dict[str, OptimisationResult]]:
     """Optimise parameters for multiple roles sequentially.
 
     Each round performs a coordinate-descent pass calling
-    :func:`optimise_parameter` for every entry in ``params`` and feeding
-    the updated configuration into subsequent optimisations.
+    :func:`optimise_parameter` for every parameter of each role.  Updated
+    values are fed back into subsequent evaluations so later parameters see
+    the latest strategy configuration.
 
     Parameters
     ----------
     params : mapping
-        Mapping of ``Role`` to ``(strategy class, parameter name, start)``.
+        Mapping of ``Role`` to ``(strategy class, {parameter: start, ...})``.
     step : float, optional
         Initial step size used for all parameters, by default ``0.1``.
     games : int, optional
@@ -137,32 +145,72 @@ def optimise_all(
         Role whose win rate is measured. Defaults to ``Role.CIVILIAN``.
     seed : int, optional
         Random seed for reproducibility.
+    base_config : mapping, optional
+        Configuration for additional roles that remain fixed during
+        optimisation.
 
     Returns
     -------
     dict
-        Mapping of roles to their optimisation results.
+        Mapping of roles to dictionaries of parameter optimisation results.
     """
 
     target = target or Role.CIVILIAN
-    config: Dict[Role, Tuple[Type[BaseStrategy], dict]] = {}
-    results: Dict[Role, OptimisationResult] = {}
+    # Copy params so start values can be updated in-place between rounds
+    params = {r: (s, dict(p)) for r, (s, p) in params.items()}
+    config: Dict[Role, Tuple[Type[BaseStrategy], dict]] = (
+        dict(base_config) if base_config else {}
+    )
+    results: Dict[Role, Dict[str, OptimisationResult]] = {
+        role: {} for role in params
+    }
+
+    # Seed config with initial parameter values
+    for role, (strategy, pmap) in params.items():
+        config[role] = (strategy, dict(pmap))
 
     for _ in range(rounds):
-        for role, (strategy, param, value) in params.items():
-            res = optimise_parameter(
-                role,
-                strategy,
-                param,
-                results.get(role, OptimisationResult(value, 0)).value,
-                step=step,
-                games=games,
-                iterations=1,
-                target=target,
-                base_config=config,
-                seed=seed,
-            )
-            results[role] = res
-            config[role] = (strategy, {param: res.value})
+        for role, (strategy, pmap) in params.items():
+            for param, value in pmap.items():
+                res = optimise_parameter(
+                    role,
+                    strategy,
+                    param,
+                    results[role].get(param, OptimisationResult(value, 0)).value,
+                    step=step,
+                    games=games,
+                    iterations=1,
+                    target=target,
+                    base_config=config,
+                    seed=seed,
+                )
+                results[role][param] = res
+                pmap[param] = res.value  # update start for subsequent rounds
+                current = dict(config.get(role, (strategy, {}))[1])
+                current[param] = res.value
+                config[role] = (strategy, current)
         step /= 2
     return results
+
+
+def optimise_from_config(path: str | Path) -> Dict[Role, Dict[str, OptimisationResult]]:
+    """Run optimisation based on a configuration file.
+
+    The helper delegates to :func:`load_optimisation_config` to interpret a
+    JSON or YAML document and then invokes :func:`optimise_all` with the
+    extracted parameters.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the optimisation configuration file.
+
+    Returns
+    -------
+    dict
+        Mapping of roles to dictionaries of optimisation results for each
+        tuned parameter.
+    """
+
+    params, base_cfg, options = load_optimisation_config(path)
+    return optimise_all(params, base_config=base_cfg, **options)

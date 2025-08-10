@@ -5,3 +5,5 @@ Use these files with ``mafia.simulate`` via the ``--config`` option or ``mafia.c
 
 * ``basic.yaml`` – default strategies with modest parameter tuning.
 * ``single_sheriff.yaml`` – configuration for the SingleSheriff rule set.
+* ``optimization.yaml`` – example setup for ``mafia.optimization`` showcasing
+  multi-parameter tuning.
