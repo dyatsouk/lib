@@ -22,6 +22,7 @@ class Game:
         self.history: List[RoundLog] = []
         self.logger = logger
         self.day_start_pid = 0
+        self.current_speeches: List[SpeechLog] = []
 
     # Helper methods
     def get_player(self, pid: int) -> Player:
@@ -75,6 +76,26 @@ class Game:
             self.logger.log(f"day {day_no}")
         speeches = []
         nominations = []
+        self.current_speeches = []
+
+        # Morning speech from last night's victim
+        last_kill = None
+        if self.history and self.history[-1].night and self.history[-1].night.kill is not None:
+            last_kill = self.history[-1].night.kill
+        if last_kill is not None:
+            victim = self.get_player(last_kill)
+            action = victim.last_words(self)
+            action.nomination = None
+            speech = SpeechLog(speaker=victim.pid, action=action)
+            speeches.append(speech)
+            self.current_speeches.append(speech)
+            if action.claims and self.logger:
+                for claim in action.claims:
+                    res = "mafia" if claim.is_mafia else "not mafia"
+                    self.logger.log(
+                        f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
+                    )
+
         alive = self.alive_players
         start_index = 0
         for i, p in enumerate(alive):
@@ -84,7 +105,9 @@ class Game:
         ordered_players = alive[start_index:] + alive[:start_index]
         for player in ordered_players:
             action: SpeechAction = player.speak(self)
-            speeches.append(SpeechLog(speaker=player.pid, action=action))
+            speech = SpeechLog(speaker=player.pid, action=action)
+            speeches.append(speech)
+            self.current_speeches.append(speech)
             if action.nomination is not None and self.is_alive(action.nomination):
                 if action.nomination not in nominations:
                     nominations.append(action.nomination)
@@ -92,11 +115,12 @@ class Game:
                     self.logger.log(
                         f"player {player.pid + 1} nominates player {action.nomination + 1}"
                     )
-            if action.claim is not None and self.logger:
-                claim = action.claim
-                self.logger.log(
-                    f"player {claim.claimant + 1} claims {claim.target + 1} is mafia"
-                )
+            if action.claims and self.logger:
+                for claim in action.claims:
+                    res = "mafia" if claim.is_mafia else "not mafia"
+                    self.logger.log(
+                        f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
+                    )
         votes = []
         vote_counts = {pid: 0 for pid in nominations}
         if self.logger:
@@ -125,6 +149,22 @@ class Game:
                 self.logger.log(f"player {eliminated + 1} is eliminated")
             else:
                 self.logger.log("no elimination")
+
+        # Eliminated player's last words
+        if eliminated is not None:
+            player = self.get_player(eliminated)
+            action = player.last_words(self)
+            action.nomination = None
+            speech = SpeechLog(speaker=player.pid, action=action)
+            speeches.append(speech)
+            self.current_speeches.append(speech)
+            if action.claims and self.logger:
+                for claim in action.claims:
+                    res = "mafia" if claim.is_mafia else "not mafia"
+                    self.logger.log(
+                        f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
+                    )
+
         # determine next day's starting player
         if ordered_players:
             next_pid = ordered_players[0].pid + 1

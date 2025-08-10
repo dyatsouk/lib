@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 
 @dataclass
@@ -10,7 +10,7 @@ class SheriffClaim:
 @dataclass
 class SpeechAction:
     nomination: Optional[int] = None
-    claim: Optional[SheriffClaim] = None
+    claims: List[SheriffClaim] = field(default_factory=list)
 
 
 @dataclass
