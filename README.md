@@ -28,7 +28,7 @@ mafia/
 ├── player.py       # Player representation tying a role to a strategy
 ├── roles.py        # Role enum and helpers
 ├── strategies.py   # Base strategy classes and simple default strategies
-├── config.py       # Load strategy configuration from JSON files
+├── config.py       # Load strategy configuration from JSON/YAML files
 └── simulate.py     # Utility for running multiple games and collecting stats
 ```
 
@@ -61,7 +61,9 @@ The repository includes simple example strategies:
   nominations and votes (unless they are the nominated target) while mafia
   focus on eliminating the sheriff and his confirmed allies. The civilian
   behaviour exposes a ``random_nomination_chance`` parameter allowing
-  simulations to tune how often unaided civilians nominate at random.
+  simulations to tune how often unaided civilians nominate at random, and the
+  mafia and don variants accept ``nomination_prob`` to control how frequently
+  they nominate civilians during the day.
 
 ## Running a Simulation
 
@@ -75,9 +77,9 @@ The number (`100` in the example) specifies how many games to simulate.
 
 ### Using a configuration file
 
-Strategies and their parameters can be described in a JSON file.  Each role
-is mapped to a strategy class name and optional constructor arguments.  For
-example:
+Strategies and their parameters can be described in a JSON **or YAML** file.
+Each role is mapped to a strategy class name and optional constructor
+arguments. For example in JSON:
 
 ```json
 {
@@ -91,11 +93,14 @@ example:
 Run simulations with the configuration via:
 
 ```bash
-python -m mafia.simulate 100 --config config.json
+python -m mafia.simulate 100 --config config.json  # or config.yaml
 ```
 
 The same configuration can be loaded programmatically with
-``mafia.config.load_config`` and passed to ``simulate_games``.
+``mafia.config.load_config`` and passed to ``simulate_games``.  Strategy
+classes are located by name at runtime, so adding a new strategy class to
+``mafia.strategies`` automatically makes it available to configuration files
+without further changes.
 
 ---
 This framework is intentionally lightweight; its main purpose is to provide a base for

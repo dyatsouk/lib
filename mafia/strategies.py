@@ -433,14 +433,31 @@ class SingleSheriffMafiaStrategy(MafiaStrategy):
     known_sheriff : Optional[int]
         Inherited from :class:`MafiaStrategy`; real sheriff if discovered by the
         don.
+    nomination_prob : float
+        Chance of nominating a civilian during speeches.
 
     The mafia prioritise killing a known or claimed sheriff and afterwards any
     civilians confirmed by the sheriff. To avoid repeatedly scanning the entire
     history we cache processed speeches.
+
+    Parameters
+    ----------
+    nomination_prob : float, optional
+        Chance of nominating a civilian during speeches. Forwarded to
+        :class:`MafiaStrategy`, by default ``0.3``.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, nomination_prob: float = 0.3):
+        """Initialise the strategy.
+
+        The ``nomination_prob`` parameter customises how often mafia members
+        issue random nominations during the day.  It mirrors the behaviour of
+        :class:`MafiaStrategy` so that configuration files can tune mafia
+        aggressiveness.
+        """
+
+        # Delegate basic behaviour, including storing ``nomination_prob``.
+        super().__init__(nomination_prob=nomination_prob)
         self.claimed_sheriff: Optional[int] = None
         self.kill_queue: List[int] = []
         self._processed_speeches: set[int] = set()
@@ -493,10 +510,18 @@ class SingleSheriffDonStrategy(SingleSheriffMafiaStrategy):
 
     Behaves like :class:`SingleSheriffMafiaStrategy` but keeps track of players
     already checked at night to avoid redundant investigations.
+
+    Parameters
+    ----------
+    nomination_prob : float, optional
+        Chance of nominating a civilian during speeches, forwarded to
+        :class:`SingleSheriffMafiaStrategy`, by default ``0.3``.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, nomination_prob: float = 0.3):
+        """Initialise the don strategy."""
+
+        super().__init__(nomination_prob=nomination_prob)
         self.checked: set[int] = set()
 
     def don_check(self, player, game, candidates: List[int]) -> Optional[int]:

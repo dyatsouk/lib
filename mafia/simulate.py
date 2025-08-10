@@ -30,8 +30,8 @@ def create_game(
         Optional logger used to record game events.
     config : mapping, optional
         Mapping from :class:`Role` to ``(strategy_class, params)`` tuples as
-        produced by :func:`mafia.config.load_config`.  When omitted, default
-        strategies are used.
+        produced by :func:`mafia.config.load_config` from JSON or YAML. When
+        omitted, default strategies are used.
     """
 
     roles = [Role.SHERIFF] + [Role.CIVILIAN] * 6 + [Role.DON] + [Role.MAFIA] * 2
@@ -70,8 +70,8 @@ def simulate_games(
     db : GameHistoryDB, optional
         Optional database for storing summaries.
     config : mapping or str or Path, optional
-        Either a configuration mapping or a path to a JSON configuration
-        file. When ``None`` the default strategies are used.
+        Either a configuration mapping or a path to a JSON or YAML
+        configuration file. When ``None`` the default strategies are used.
     """
 
     if isinstance(config, (str, Path)):
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         "--config",
         type=str,
         default=None,
-        help="Path to JSON file describing strategies for each role",
+        help="Path to JSON or YAML file describing strategies for each role",
     )
     args = parser.parse_args()
 
