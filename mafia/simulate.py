@@ -7,6 +7,7 @@ from .player import Player
 from .strategies import CivilianStrategy, SheriffStrategy, MafiaStrategy, DonStrategy
 from .game import Game
 from .logger import GameLogger
+from .history import GameHistoryDB
 
 
 def create_game(logger: GameLogger | None = None) -> Game:
@@ -26,7 +27,11 @@ def create_game(logger: GameLogger | None = None) -> Game:
     return Game(players, logger=logger)
 
 
-def simulate_games(n: int, logger: GameLogger | None = None) -> Dict[Role, int]:
+def simulate_games(
+    n: int,
+    logger: GameLogger | None = None,
+    db: GameHistoryDB | None = None,
+) -> Dict[Role, int]:
     results = Counter()
     for i in range(n):
         if logger:
@@ -34,6 +39,8 @@ def simulate_games(n: int, logger: GameLogger | None = None) -> Dict[Role, int]:
         game = create_game(logger)
         winner = game.run()
         results[winner] += 1
+        if db:
+            db.log_game(game, winner)
     return results
 
 
@@ -44,14 +51,18 @@ if __name__ == "__main__":
     parser.add_argument("n", type=int, nargs="?", default=10, help="Number of games to simulate")
     parser.add_argument("-v", "--verbose", action="store_true", help="Log actions to stdout")
     parser.add_argument("-l", "--log", action="store_true", help="Write action log to simul.log")
+    parser.add_argument("--db", type=str, help="Path to SQLite database for storing game summaries")
     args = parser.parse_args()
 
     logger = None
     if args.verbose or args.log:
         logger = GameLogger(verbose=args.verbose, log_to_file=args.log)
-    results = simulate_games(args.n, logger)
+    db = GameHistoryDB(args.db) if args.db else None
+    results = simulate_games(args.n, logger, db)
     if logger:
         logger.close()
+    if db:
+        db.close()
     total = sum(results.values())
     for role, count in results.items():
         print(f"{role.name} wins: {count} ({count/total:.1%})")
