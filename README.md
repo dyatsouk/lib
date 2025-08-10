@@ -47,7 +47,11 @@ strategy implementing the following methods:
 * `don_check(player, game, candidates)` *(don only)*
 
 `game` exposes the full history of previous rounds so strategies can base their decisions on
-past events.
+past events.  It also emits a callback whenever a new speech is recorded.  Strategies that
+define ``on_speech(day_no, index, speech)`` will receive these events and can update their
+internal state only when new information appears instead of rescanning the entire history.
+This event‑driven approach is used by the "SingleSheriff" strategies to efficiently track
+sheriff claims.
 
 The repository includes simple example strategies:
 

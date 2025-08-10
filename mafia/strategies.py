@@ -1,7 +1,7 @@
 import random
 from typing import List, Optional
 
-from .actions import SpeechAction, SheriffClaim
+from .actions import SpeechAction, SheriffClaim, SpeechLog
 
 
 class BaseStrategy:
@@ -232,11 +232,10 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
         Players publicly identified as mafia by the sheriff.
     checked_civilians : set[int]
         Players publicly cleared as civilians by the sheriff.
-    _processed_speeches : set[int]
-        Internal ids of speeches that have already been analysed.
-    _next_history_index : int
-        Index into the game history indicating the next round to scan for
-        claims.
+    _last_round : int
+        The most recent day number whose speeches have been examined.
+    _last_speech_index : int
+        Index of the last processed speech within ``_last_round``.
     random_nomination_chance : float
         Base probability of issuing a random nomination when the civilian has
         no guidance from the sheriff.
@@ -245,8 +244,10 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
     sheriff is revealed, civilians mirror the sheriff's nomination and vote
     unless they themselves are the target. The strategy tracks the sheriff's
     public checks and avoids nominating or voting for confirmed civilians
-    while prioritising confirmed mafia. To keep processing cheap we remember
-    which speeches have already been analysed.
+    while prioritising confirmed mafia.  Instead of scanning the entire game
+    history on each action, it reacts to speech events provided by the game
+    engine.  The last processed day and speech index are cached so duplicate
+    callbacks are ignored, keeping claim processing inexpensive.
     """
 
     def __init__(
@@ -271,23 +272,31 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
         self.sheriff: Optional[int] = None
         self.checked_mafia: set[int] = set()
         self.checked_civilians: set[int] = set()
-        self._processed_speeches: set[int] = set()
-        self._next_history_index = 0
+        self._last_round = -1
+        self._last_speech_index = -1
         # Allow simulations to tune how often civilians nominate at random
         # when they have no better information.
         self.random_nomination_chance = random_nomination_chance
+    def on_speech(self, day_no: int, index: int, speech: SpeechLog):
+        """Callback executed when the game records a new speech.
 
-    def _update_claims(self, game):
-        """Incorporate new sheriff claims from past and current speeches."""
-        while self._next_history_index < len(game.history):
-            round_log = game.history[self._next_history_index]
-            for speech in round_log.day.speeches:
-                if id(speech) not in self._processed_speeches:
-                    self._process_speech(speech)
-            self._next_history_index += 1
-        for speech in getattr(game, "current_speeches", []):
-            if id(speech) not in self._processed_speeches:
-                self._process_speech(speech)
+        The game engine invokes this method every time a speech occurs.  We
+        track the ``day_no`` and speech ``index`` to avoid reprocessing the
+        same speech multiple times.
+        """
+
+        self._update_claims(day_no, index, speech)
+
+    def _update_claims(self, day_no: int, index: int, speech: SpeechLog):
+        """Incorporate sheriff claims from ``speech`` if it is new."""
+
+        if day_no < self._last_round or (
+            day_no == self._last_round and index <= self._last_speech_index
+        ):
+            return
+        self._process_speech(speech)
+        self._last_round = day_no
+        self._last_speech_index = index
 
     def _process_speech(self, speech):
         for claim in speech.action.claims:
@@ -298,12 +307,9 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
                     self.checked_mafia.add(claim.target)
                 else:
                     self.checked_civilians.add(claim.target)
-        self._processed_speeches.add(id(speech))
 
     def speak(self, player, game) -> SpeechAction:
         """Return a speech aligning with trusted sheriff information."""
-
-        self._update_claims(game)
 
         # Prioritise nominating mafia that the sheriff has publicly checked.
         for target in self.checked_mafia:
@@ -344,7 +350,6 @@ class SingleSheriffCivilianStrategy(BaseStrategy):
     def vote(self, player, game, nominations: List[int]) -> Optional[int]:
         """Choose a vote, mirroring the sheriff when possible."""
 
-        self._update_claims(game)
         if self.sheriff is not None:
             sheriff_speech = next(
                 (s for s in game.current_speeches if s.speaker == self.sheriff),
@@ -452,10 +457,10 @@ class SingleSheriffMafiaStrategy(MafiaStrategy):
         Player id of the first claimant to the sheriff role.
     kill_queue : List[int]
         Ordered list of civilians publicly cleared by the sheriff.
-    _processed_speeches : set[int]
-        Cache of processed speech ids to avoid re-scanning history.
-    _next_history_index : int
-        Index of the next round in the game history to process.
+    _last_round : int
+        Day number of the most recently processed speech.
+    _last_speech_index : int
+        Index of the last speech examined within ``_last_round``.
     known_sheriff : Optional[int]
         Inherited from :class:`MafiaStrategy`; real sheriff if discovered by the
         don.
@@ -463,8 +468,9 @@ class SingleSheriffMafiaStrategy(MafiaStrategy):
         Chance of nominating a civilian during speeches.
 
     The mafia prioritise killing a known or claimed sheriff and afterwards any
-    civilians confirmed by the sheriff. To avoid repeatedly scanning the entire
-    history we cache processed speeches.
+    civilians confirmed by the sheriff. Rather than scanning the full history
+    on each action, this strategy listens for speech events emitted by the game
+    engine and caches the last processed day/speech to avoid redundant work.
 
     Parameters
     ----------
@@ -486,19 +492,22 @@ class SingleSheriffMafiaStrategy(MafiaStrategy):
         super().__init__(nomination_prob=nomination_prob)
         self.claimed_sheriff: Optional[int] = None
         self.kill_queue: List[int] = []
-        self._processed_speeches: set[int] = set()
-        self._next_history_index = 0
+        self._last_round = -1
+        self._last_speech_index = -1
 
-    def _update_claims(self, game):
-        while self._next_history_index < len(game.history):
-            round_log = game.history[self._next_history_index]
-            for speech in round_log.day.speeches:
-                if id(speech) not in self._processed_speeches:
-                    self._process_speech(speech)
-            self._next_history_index += 1
-        for speech in getattr(game, "current_speeches", []):
-            if id(speech) not in self._processed_speeches:
-                self._process_speech(speech)
+    def on_speech(self, day_no: int, index: int, speech: SpeechLog):
+        """React to new speeches from the game engine."""
+
+        self._update_claims(day_no, index, speech)
+
+    def _update_claims(self, day_no: int, index: int, speech: SpeechLog):
+        if day_no < self._last_round or (
+            day_no == self._last_round and index <= self._last_speech_index
+        ):
+            return
+        self._process_speech(speech)
+        self._last_round = day_no
+        self._last_speech_index = index
 
     def _process_speech(self, speech):
         for claim in speech.action.claims:
@@ -507,10 +516,8 @@ class SingleSheriffMafiaStrategy(MafiaStrategy):
             if claim.claimant == self.claimed_sheriff or claim.claimant == self.known_sheriff:
                 if not claim.is_mafia and claim.target not in self.kill_queue:
                     self.kill_queue.append(claim.target)
-        self._processed_speeches.add(id(speech))
 
     def mafia_kill(self, player, game, candidates: List[int]) -> Optional[int]:
-        self._update_claims(game)
         self.kill_queue = [pid for pid in self.kill_queue if game.is_alive(pid)]
         options = [pid for pid in candidates if not game.get_player(pid).role.is_mafia()]
         if self.known_sheriff is not None and self.known_sheriff in options:

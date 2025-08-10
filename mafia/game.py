@@ -1,5 +1,5 @@
 import random
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from .roles import Role
 from .player import Player
@@ -24,6 +24,15 @@ class Game:
         self.logger = logger
         self.day_start_pid = 0
         self.current_speeches: List[SpeechLog] = []
+        # Callbacks fired whenever a new speech is added.  Strategies that
+        # analyse claims can subscribe to this signal to update their internal
+        # state only when necessary instead of scanning the entire history on
+        # every action.
+        self._speech_listeners: List[Callable[[int, int, SpeechLog], None]] = []
+        for player in players:
+            callback = getattr(player.strategy, "on_speech", None)
+            if callable(callback):
+                self._speech_listeners.append(callback)
 
     # Helper methods
     def get_player(self, pid: int) -> Player:
@@ -48,6 +57,40 @@ class Game:
         if self.mafia_count() >= self.civilian_count():
             return Role.MAFIA
         return None
+
+    # Event system -----------------------------------------------------
+    def add_speech_listener(self, callback: Callable[[int, int, SpeechLog], None]):
+        """Register a callback invoked whenever a speech is added."""
+
+        self._speech_listeners.append(callback)
+
+    def _notify_speech(self, day_no: int, index: int, speech: SpeechLog):
+        """Emit a speech event to all listeners.
+
+        Parameters
+        ----------
+        day_no:
+            Current day number, starting at ``1``.
+        index:
+            Zero-based index of the speech within the day.  Listeners may cache
+            this information to skip reprocessing already-seen speeches.
+        speech:
+            The newly recorded :class:`~mafia.actions.SpeechLog` instance.
+        """
+
+        for callback in self._speech_listeners:
+            callback(day_no, index, speech)
+
+    # Convenience for tests and manual injection -----------------------
+    def add_speech(self, speech: SpeechLog, day_no: int = 1):
+        """Append ``speech`` to ``current_speeches`` and fire callbacks.
+
+        This helper allows tests to simulate new speeches without running an
+        entire day phase.
+        """
+
+        self.current_speeches.append(speech)
+        self._notify_speech(day_no, len(self.current_speeches) - 1, speech)
 
     def run(self) -> Role:
         if self.logger:
@@ -97,7 +140,7 @@ class Game:
             action.nomination = None
             speech = SpeechLog(speaker=victim.pid, action=action)
             speeches.append(speech)
-            self.current_speeches.append(speech)
+            self.add_speech(speech, day_no)
             if self.logger:
                 if action.claims:
                     for claim in action.claims:
@@ -119,7 +162,7 @@ class Game:
             action: SpeechAction = player.speak(self)
             speech = SpeechLog(speaker=player.pid, action=action)
             speeches.append(speech)
-            self.current_speeches.append(speech)
+            self.add_speech(speech, day_no)
             if action.nomination is not None and self.is_alive(action.nomination):
                 if action.nomination not in nominations:
                     nominations.append(action.nomination)
@@ -184,7 +227,7 @@ class Game:
                         action.nomination = None
                         speech = SpeechLog(speaker=player.pid, action=action)
                         speeches.append(speech)
-                        self.current_speeches.append(speech)
+                        self.add_speech(speech, day_no)
                         if action.claims and self.logger:
                             for claim in action.claims:
                                 res = "mafia" if claim.is_mafia else "not mafia"
@@ -228,7 +271,7 @@ class Game:
                 action.nomination = None
                 speech = SpeechLog(speaker=player.pid, action=action)
                 speeches.append(speech)
-                self.current_speeches.append(speech)
+                self.add_speech(speech, day_no)
                 if action.claims and self.logger:
                     for claim in action.claims:
                         res = "mafia" if claim.is_mafia else "not mafia"
