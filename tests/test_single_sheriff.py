@@ -64,15 +64,16 @@ def test_night_victim_speaks_next_day():
 
 
 def test_eliminated_player_speaks_after_vote():
-    # Player 1 nominates player 0 and both 1 and 2 vote for him, eliminating
-    # player 0. The eliminated player gets a final speech without nomination.
+    """Eliminated player receives final speech after a vote."""
+
     players = [
         Player(0, Role.CIVILIAN, BaseStrategy()),
         Player(1, Role.CIVILIAN, NominateVoteStrategy()),
         Player(2, Role.CIVILIAN, VoteStrategy()),
     ]
     game = Game(players)
-    day = game.day_phase(1)
+    # Use day number 2 to bypass the first-day single-nomination exemption.
+    day = game.day_phase(2)
     assert day.eliminated == [0]
     assert day.speeches[-1].speaker == 0  # eliminated player speaks last
     assert day.speeches[-1].action.nomination is None  # no nomination allowed

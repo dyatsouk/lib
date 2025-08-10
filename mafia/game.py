@@ -133,58 +133,67 @@ class Game:
                     self.logger.log(
                         f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
                     )
-        votes = []
-        vote_counts = {pid: 0 for pid in nominations}
-        if self.logger:
-            self.logger.log(f"day {day_no} voting")
-        for player in self.alive_players:
-            vote_target = player.vote(self, nominations)
-            if nominations:
-                # Force a valid vote choice; abstaining defaults to the last nomination.
-                if vote_target not in nominations:
-                    vote_target = nominations[-1]
-                votes.append(Vote(voter=player.pid, target=vote_target))
-                vote_counts[vote_target] += 1
-                if self.logger:
-                    self.logger.log(
-                        f"player {player.pid + 1} votes for player {vote_target + 1}"
-                    )
-            else:
-                # No nominations: players effectively abstain.
-                votes.append(Vote(voter=player.pid, target=None))
-                if self.logger:
-                    self.logger.log(f"player {player.pid + 1} abstains")
-
+        votes: List[Vote] = []
         eliminated: List[int] = []
-        if vote_counts:
-            max_votes = max(vote_counts.values())
-            top = [pid for pid, count in vote_counts.items() if count == max_votes]
-            if len(top) == 1:
-                eliminated = top
-            else:
-                # Re-run voting with only the tied candidates.
-                # Every player votes again exactly once.
+
+        # Rule 4.4.10: skip voting on the first day if only one nomination exists.
+        if not (day_no == 1 and len(nominations) == 1):
+            current_candidates = list(nominations)
+            previous_candidates: Optional[List[int]] = None
+
+            while current_candidates:
+                vote_counts = {pid: 0 for pid in current_candidates}
                 if self.logger:
-                    self.logger.log("tie detected, revoting")
-                revote_counts = {pid: 0 for pid in top}
+                    self.logger.log(f"day {day_no} voting")
                 for player in self.alive_players:
-                    vote_target = player.vote(self, top)
-                    if vote_target not in top:
-                        # Abstention in revote still defaults to the last candidate.
-                        vote_target = top[-1]
-                    votes.append(Vote(voter=player.pid, target=vote_target))
-                    revote_counts[vote_target] += 1
-                    if self.logger:
-                        self.logger.log(
-                            f"player {player.pid + 1} revotes for player {vote_target + 1}"
-                        )
-                max_votes = max(revote_counts.values())
-                top = [pid for pid, count in revote_counts.items() if count == max_votes]
+                    vote_target = player.vote(self, current_candidates)
+                    if current_candidates:
+                        # Force a valid vote choice; abstaining defaults to the last
+                        # candidate.
+                        if vote_target not in current_candidates:
+                            vote_target = current_candidates[-1]
+                        votes.append(Vote(voter=player.pid, target=vote_target))
+                        vote_counts[vote_target] += 1
+                        if self.logger:
+                            self.logger.log(
+                                f"player {player.pid + 1} votes for player {vote_target + 1}"
+                            )
+                    else:
+                        # No nominations: players effectively abstain.
+                        votes.append(Vote(voter=player.pid, target=None))
+                        if self.logger:
+                            self.logger.log(f"player {player.pid + 1} abstains")
+
+                if not vote_counts:
+                    break
+                max_votes = max(vote_counts.values())
+                top = [pid for pid, count in vote_counts.items() if count == max_votes]
                 if len(top) == 1:
                     eliminated = top
-                else:
-                    # Final vote: should all tied players be eliminated?
-                    # Absolute majority of "yes" votes eliminates them.
+                    break
+
+                # Rule 4.4.12: tied players get extra speeches and a revote.
+                if self.logger:
+                    self.logger.log("tie detected, revoting")
+                for pid in nominations:
+                    if pid in top:
+                        # Extra 30-second speech; nominations during this phase are
+                        # ignored per tournament rules.
+                        player = self.get_player(pid)
+                        action = player.speak(self)
+                        action.nomination = None
+                        speech = SpeechLog(speaker=player.pid, action=action)
+                        speeches.append(speech)
+                        self.current_speeches.append(speech)
+                        if action.claims and self.logger:
+                            for claim in action.claims:
+                                res = "mafia" if claim.is_mafia else "not mafia"
+                                self.logger.log(
+                                    f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
+                                )
+
+                if previous_candidates and set(top) == set(previous_candidates):
+                    # Rule 4.4.12.3: if the same set ties again, vote on eliminating all.
                     if self.logger:
                         self.logger.log("revote tie, voting on elimination")
                     yes_votes = sum(
@@ -192,6 +201,11 @@ class Game:
                     )
                     if yes_votes > len(self.alive_players) // 2:
                         eliminated = top
+                    break
+
+                # Rule 4.4.12.2: if tie narrows to fewer candidates, repeat.
+                previous_candidates = top
+                current_candidates = top
 
         if eliminated:
             for pid in eliminated:
