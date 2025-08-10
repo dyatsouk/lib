@@ -77,9 +77,12 @@ class MafiaStrategy(BaseStrategy):
         return SpeechAction(nomination=nomination)
 
     def mafia_kill(self, player, game, candidates: List[int]) -> Optional[int]:
-        if self.known_sheriff and self.known_sheriff in candidates:
+        options = [pid for pid in candidates if not game.get_player(pid).role.is_mafia()]
+        if self.known_sheriff and self.known_sheriff in options:
             return self.known_sheriff
-        return random.choice(candidates)
+        if options:
+            return random.choice(options)
+        return None
 
     def vote(self, player, game, nominations: List[int]) -> Optional[int]:
         civilians = [pid for pid in nominations if not game.get_player(pid).role.is_mafia()]

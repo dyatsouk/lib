@@ -6,6 +6,7 @@ from .player import Player
 from .logger import GameLogger
 from .actions import (
     SpeechAction,
+    SpeechLog,
     Vote,
     CheckResult,
     DonCheckResult,
@@ -47,6 +48,14 @@ class Game:
         return None
 
     def run(self) -> Role:
+        if self.logger:
+            mafia_players = [p.pid + 1 for p in self.players if p.role == Role.MAFIA]
+            don_player = next(p.pid + 1 for p in self.players if p.role == Role.DON)
+            sheriff_player = next(p.pid + 1 for p in self.players if p.role == Role.SHERIFF)
+            mafia_list = ", ".join(str(pid) for pid in mafia_players)
+            self.logger.log(f"mafia: {mafia_list}")
+            self.logger.log(f"don: {don_player}")
+            self.logger.log(f"sheriff: {sheriff_player}")
         round_no = 1
         while True:
             day_log = self.day_phase(round_no)
@@ -64,7 +73,7 @@ class Game:
     def day_phase(self, day_no: int) -> DayLog:
         if self.logger:
             self.logger.log(f"day {day_no}")
-        speeches = {}
+        speeches = []
         nominations = []
         alive = self.alive_players
         start_index = 0
@@ -75,7 +84,7 @@ class Game:
         ordered_players = alive[start_index:] + alive[:start_index]
         for player in ordered_players:
             action: SpeechAction = player.speak(self)
-            speeches[player.pid] = action
+            speeches.append(SpeechLog(speaker=player.pid, action=action))
             if action.nomination is not None and self.is_alive(action.nomination):
                 if action.nomination not in nominations:
                     nominations.append(action.nomination)
@@ -188,3 +197,30 @@ class Game:
                     )
 
         return NightLog(sheriff_check=sheriff_check, don_check=don_check, kill=kill)
+
+    # History access
+    def history_for(self, pid: int) -> List[RoundLog]:
+        """Return the portion of game history observable to the given player."""
+        player = self.get_player(pid)
+        visible: List[RoundLog] = []
+        for round_log in self.history:
+            day = round_log.day
+            night = None
+            if round_log.night:
+                night = NightLog(
+                    sheriff_check=None,
+                    don_check=None,
+                    kill=round_log.night.kill,
+                )
+                if (
+                    player.role == Role.SHERIFF
+                    and round_log.night.sheriff_check
+                ):
+                    night.sheriff_check = round_log.night.sheriff_check
+                if (
+                    player.role == Role.DON
+                    and round_log.night.don_check
+                ):
+                    night.don_check = round_log.night.don_check
+            visible.append(RoundLog(day=day, night=night))
+        return visible
