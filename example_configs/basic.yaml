@@ -1,0 +1,17 @@
+CIVILIAN:
+  strategy: CivilianStrategy
+  params:
+    nomination_prob: 0.3
+SHERIFF:
+  strategy: SheriffStrategy
+  params:
+    nomination_prob: 0.2
+    reveal_prob: 0.8
+MAFIA:
+  strategy: MafiaStrategy
+  params:
+    nomination_prob: 0.3
+DON:
+  strategy: DonStrategy
+  params:
+    nomination_prob: 0.3
