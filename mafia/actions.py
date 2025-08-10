@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 @dataclass
 class SheriffClaim:
@@ -11,6 +11,13 @@ class SheriffClaim:
 class SpeechAction:
     nomination: Optional[int] = None
     claim: Optional[SheriffClaim] = None
+
+
+@dataclass
+class SpeechLog:
+    """Record of a player's speech in order."""
+    speaker: int
+    action: SpeechAction
 
 @dataclass
 class Vote:
@@ -31,8 +38,8 @@ class DonCheckResult:
 
 @dataclass
 class DayLog:
-    speeches: dict  # pid -> SpeechAction
-    votes: list  # List[Vote]
+    speeches: List[SpeechLog]
+    votes: List[Vote]
     eliminated: Optional[int]
 
 @dataclass
@@ -44,4 +51,4 @@ class NightLog:
 @dataclass
 class RoundLog:
     day: DayLog
-    night: NightLog
+    night: Optional[NightLog]
