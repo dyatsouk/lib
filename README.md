@@ -30,6 +30,7 @@ mafia/
 ├── strategies.py   # Base strategy classes and simple default strategies
 ├── config.py       # Load strategy configuration from JSON/YAML files
 ├── simulate.py     # Utility for running multiple games and collecting stats
+├── history.py      # SQLite game history logger with configurable batching
 └── optimization/   # Helpers to tune strategy parameters via simulations
 ```
 
@@ -105,6 +106,21 @@ The same configuration can be loaded programmatically with
 classes are located by name at runtime, so adding a new strategy class to
 ``mafia.strategies`` automatically makes it available to configuration files
 without further changes.
+
+## Persisting Game Histories
+
+The `mafia.history` module records entire games to an SQLite database.  To
+reduce disk overhead, game inserts are buffered and committed in batches.  The
+batch size is configurable via ``GameHistoryDB(batch_size=n)``; higher values
+offer better performance but risk losing the most recent games if the process
+terminates before the buffer is flushed:
+
+```python
+from mafia.history import GameHistoryDB
+db = GameHistoryDB(batch_size=10)  # commit after every 10 games
+```
+
+Closing the database connection flushes any remaining buffered games.
 
 ### Parameter Optimisation
 

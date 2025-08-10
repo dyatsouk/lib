@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 import sys
 from pathlib import Path
+import sqlite3
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -27,6 +28,8 @@ def _make_game(nominations: int, kill: bool, elimination: bool):
 
 
 def test_history_totals(tmp_path):
+    """Aggregated counts in the database match the original games."""
+
     games = [
         _make_game(1, True, True),
         _make_game(2, False, True),
@@ -93,4 +96,31 @@ def test_history_totals(tmp_path):
     assert db_noms == expected_noms
     assert db_kills == expected_kills
     assert db_elims == expected_elims
+
+
+def test_batched_logging(tmp_path):
+    """Games are buffered and committed in batches without data loss."""
+
+    games = [_make_game(1, True, False) for _ in range(5)]
+    db_path = tmp_path / "games.db"
+    db = GameHistoryDB(db_path, batch_size=2)
+
+    # Insert games and monitor how the on-disk row count changes. The count
+    # should only increase when the batch size is reached.
+    for idx, game in enumerate(games, start=1):
+        db.log_game(game, Role.CIVILIAN)
+        conn = sqlite3.connect(db_path)
+        row_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+        conn.close()
+        if idx % 2 == 0:
+            assert row_count == idx
+        else:
+            assert row_count == idx - 1
+
+    # Closing the DB flushes the final partial batch.
+    db.close()
+    conn = sqlite3.connect(db_path)
+    final_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+    conn.close()
+    assert final_count == len(games)
 
