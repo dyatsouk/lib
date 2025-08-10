@@ -51,13 +51,19 @@ if __name__ == "__main__":
     parser.add_argument("n", type=int, nargs="?", default=10, help="Number of games to simulate")
     parser.add_argument("-v", "--verbose", action="store_true", help="Log actions to stdout")
     parser.add_argument("-l", "--log", action="store_true", help="Write action log to simul.log")
-    parser.add_argument("--db", type=str, help="Path to SQLite database for storing game summaries")
+    parser.add_argument(
+        "--db",
+        nargs="?",
+        const="games.db",
+        default=None,
+        help="Path to SQLite database for storing game summaries (defaults to games.db)",
+    )
     args = parser.parse_args()
 
     logger = None
     if args.verbose or args.log:
         logger = GameLogger(verbose=args.verbose, log_to_file=args.log)
-    db = GameHistoryDB(args.db) if args.db else None
+    db = GameHistoryDB(args.db) if args.db is not None else None
     results = simulate_games(args.n, logger, db)
     if logger:
         logger.close()
