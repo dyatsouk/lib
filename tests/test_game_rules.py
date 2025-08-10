@@ -75,9 +75,45 @@ class FixedVotingStrategy(BaseStrategy):
         return self.eliminate
 
 
+class MultiRoundStrategy(BaseStrategy):
+    """Strategy returning a predefined sequence of vote targets.
+
+    Parameters
+    ----------
+    nomination : Optional[int]
+        Initial nomination during ``speak``.
+    votes : list[int]
+        Ordered list of vote targets for successive voting rounds. If
+        more votes are required than provided, the last target is
+        repeated.
+    eliminate : bool
+        Whether this player votes to eliminate all tied candidates in
+        the final mass-elimination vote.
+    """
+
+    def __init__(self, nomination, votes, eliminate):
+        self.nomination = nomination
+        self.votes = votes
+        self.eliminate = eliminate
+        self._idx = 0
+
+    def speak(self, player, game):
+        return SpeechAction(nomination=self.nomination)
+
+    def vote(self, player, game, nominations):
+        choice = self.votes[self._idx] if self._idx < len(self.votes) else self.votes[-1]
+        self._idx += 1
+        return choice
+
+    def vote_elimination(self, player, game, candidates):
+        return self.eliminate
+
+
 # Test 1: voting enforcement
 
 def test_players_cannot_abstain_when_candidates_exist():
+    """Abstaining when candidates exist defaults the vote to a nominee."""
+
     players = [
         Player(0, Role.CIVILIAN, NominateAbstainStrategy()),
         Player(1, Role.CIVILIAN, AbstainStrategy()),
@@ -163,3 +199,36 @@ def test_tied_candidates_spared_without_majority():
     assert day.eliminated is None
     assert all(p.alive for p in players)
     assert len(day.votes) == 8
+
+
+def test_single_nomination_first_day_skips_vote():
+    """No voting occurs on the first day if a single player is nominated."""
+
+    players = [
+        Player(0, Role.CIVILIAN, NominateAbstainStrategy(1)),
+        Player(1, Role.CIVILIAN, AbstainStrategy()),
+    ]
+    game = Game(players)
+    day = game.day_phase(1)
+    assert day.votes == []
+    assert day.eliminated is None
+
+
+def test_revote_until_stable_tie():
+    """Revotes repeat while ties shrink; stable ties trigger mass vote."""
+
+    players = [
+        Player(0, Role.CIVILIAN, MultiRoundStrategy(1, [1, 1, 1], True)),
+        Player(1, Role.CIVILIAN, MultiRoundStrategy(2, [2, 2, 2], False)),
+        Player(2, Role.CIVILIAN, MultiRoundStrategy(3, [3, 1, 1], False)),
+        Player(3, Role.CIVILIAN, MultiRoundStrategy(None, [1, 1, 1], True)),
+        Player(4, Role.CIVILIAN, MultiRoundStrategy(None, [2, 2, 2], True)),
+        Player(5, Role.CIVILIAN, MultiRoundStrategy(None, [3, 2, 2], True)),
+    ]
+    game = Game(players)
+    day = game.day_phase(1)
+    # Three voting rounds: 6 players * 3 rounds = 18 vote records
+    assert len(day.votes) == 18
+    # Final mass elimination removes players 1 and 2
+    assert day.eliminated == [1, 2]
+    assert not players[1].alive and not players[2].alive
