@@ -24,3 +24,6 @@ class Player:
 
     def don_check(self, game, candidates):
         return self.strategy.don_check(self, game, candidates)
+
+    def last_words(self, game):
+        return self.strategy.last_words(self, game)

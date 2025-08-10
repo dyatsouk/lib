@@ -55,6 +55,9 @@ The repository includes simple example strategies:
   discovered sheriffs at night.
 * **DonStrategy** – in addition to mafia behaviour, checks for the sheriff at night and
   shares the information with fellow mafia members.
+* **SingleSheriff strategies** – a coordinated set where civilians trust the first
+  sheriff claimant, the sheriff may randomly reveal each day, and mafia focus on
+  eliminating the sheriff and his confirmed allies.
 
 ## Running a Simulation
 
