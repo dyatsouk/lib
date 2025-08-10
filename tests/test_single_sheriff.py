@@ -88,15 +88,16 @@ def test_single_sheriff_civilian_strategy():
         Player(2, Role.CIVILIAN, SingleSheriffCivilianStrategy()),
     ]
     game = Game(players)
-    game.current_speeches = [
+    game.add_speech(
         SpeechLog(
             speaker=0,
             action=SpeechAction(
                 nomination=1,
                 claims=[SheriffClaim(0, 1, True), SheriffClaim(0, 2, False)],
             ),
-        )
-    ]
+        ),
+        day_no=1,
+    )
     vote = players[2].vote(game, [1, 2])
     assert vote == 1  # follows sheriff's vote
     speech = players[2].speak(game)
@@ -113,15 +114,16 @@ def test_civilians_follow_revealed_sheriff():
         Player(3, Role.CIVILIAN, SingleSheriffCivilianStrategy()),
     ]
     game = Game(players)
-    game.current_speeches = [
+    game.add_speech(
         SpeechLog(
             speaker=0,
             action=SpeechAction(
                 nomination=1,
                 claims=[SheriffClaim(0, 1, True)],
             ),
-        )
-    ]
+        ),
+        day_no=1,
+    )
 
     for pid in (2, 3):
         speech = players[pid].speak(game)
@@ -140,7 +142,7 @@ def test_civilian_targeted_by_sheriff_nominate_elsewhere():
         Player(3, Role.CIVILIAN, SingleSheriffCivilianStrategy()),
     ]
     game = Game(players)
-    game.current_speeches = [
+    game.add_speech(
         SpeechLog(
             speaker=0,
             action=SpeechAction(
@@ -150,8 +152,9 @@ def test_civilian_targeted_by_sheriff_nominate_elsewhere():
                     SheriffClaim(0, 3, False),
                 ],
             ),
-        )
-    ]
+        ),
+        day_no=1,
+    )
 
     # Ensure nomination occurs by forcing random.random() to return 0.0
     original_random = random.random
@@ -246,22 +249,27 @@ def test_single_sheriff_mafia_kill_priorities():
     assert target == 0
     # claimed sheriff
     mafia.strategy.known_sheriff = None
-    game.current_speeches = [
+    game.add_speech(
         SpeechLog(
             speaker=0,
             action=SpeechAction(claims=[SheriffClaim(0, 2, False)]),
-        )
-    ]
+        ),
+        day_no=1,
+    )
     target = mafia.mafia_kill(game, [0, 2, 3])
     assert target == 0
     # kill checked civilian
     mafia.strategy.claimed_sheriff = None
     mafia.strategy.kill_queue = []
-    mafia.strategy._processed_speeches = set()
-    mafia.strategy._next_history_index = 0
-    mafia.strategy._update_claims(game)
-    mafia.strategy.claimed_sheriff = None
     game.current_speeches = []
+    game.add_speech(
+        SpeechLog(
+            speaker=0,
+            action=SpeechAction(claims=[SheriffClaim(0, 2, False)]),
+        ),
+        day_no=2,
+    )
+    mafia.strategy.claimed_sheriff = None
     target = mafia.mafia_kill(game, [0, 2, 3])
     assert target == 2
 
@@ -281,3 +289,52 @@ def test_single_sheriff_don_check():
     strategy.checked.add(first)
     second = player.don_check(game, candidates)
     assert first in candidates and second in candidates and first != second
+
+
+class TrackingCivilian(SingleSheriffCivilianStrategy):
+    """Helper strategy counting how many speeches were processed."""
+
+    def __init__(self):
+        super().__init__()
+        self.processed = 0
+
+    def _process_speech(self, speech):  # pragma: no cover - trivial wrapper
+        self.processed += 1
+        super()._process_speech(speech)
+
+
+def test_claim_processing_short_circuit():
+    """Strategy should skip claim updates when no new speeches arrive."""
+
+    players = [
+        Player(0, Role.SHERIFF, BaseStrategy()),
+        Player(1, Role.MAFIA, BaseStrategy()),
+        Player(2, Role.CIVILIAN, TrackingCivilian()),
+    ]
+    game = Game(players)
+    strat = players[2].strategy
+
+    # First claim triggers processing.
+    game.add_speech(
+        SpeechLog(
+            speaker=0,
+            action=SpeechAction(claims=[SheriffClaim(0, 1, True)]),
+        ),
+        day_no=1,
+    )
+    assert strat.processed == 1
+
+    # Speaking again without new speeches should not increase the counter.
+    players[2].speak(game)
+    assert strat.processed == 1
+
+    # Another day's claim should invoke processing again.
+    game.current_speeches = []
+    game.add_speech(
+        SpeechLog(
+            speaker=0,
+            action=SpeechAction(claims=[SheriffClaim(0, 2, True)]),
+        ),
+        day_no=2,
+    )
+    assert strat.processed == 2
