@@ -12,7 +12,8 @@ expected to be JSON or YAML with two sections:
 ``base``
     Optional mapping of additional roles that should remain fixed during
     optimisation.  These entries follow the structure used by
-    :func:`mafia.config.load_config`.
+    :func:`mafia.config.load_config`. Roles not listed in either section use
+    the default strategies from :mod:`mafia.simulate`.
 
 Additional top level keys configure the optimisation run itself:
 ``step``, ``games``, ``rounds``, ``target`` and ``seed``.  See

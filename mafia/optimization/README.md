@@ -24,3 +24,20 @@ python -m mafia.optimization example_configs/optimization.yaml
 The configuration format mirrors `example_configs/optimization.yaml` and
 allows specifying which parameters to tune – including multiple parameters
 per role – along with any fixed strategies for other roles.
+
+### Examples
+
+Optimise a **single parameter** for a role:
+
+```bash
+python -m mafia.optimization example_configs/optimization_civilian.yaml
+```
+
+Optimise **all parameters** for a single role:
+
+```bash
+python -m mafia.optimization example_configs/optimization_sheriff.yaml
+```
+
+Roles omitted from the configuration use their default strategies unless a
+`base` section supplies fixed alternatives.

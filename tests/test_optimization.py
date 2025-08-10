@@ -1,9 +1,11 @@
 """Tests for optimisation helpers.
 
-The optimisation routines simulate games to tweak strategy parameters.  These
+The optimisation routines simulate games to tweak strategy parameters. These
 tests exercise both the single-parameter helper and the multi-role optimisation
 to ensure they return reasonable win rates and updated values.
 """
+
+from pathlib import Path
 
 from mafia.roles import Role
 from mafia.strategies import CivilianStrategy, MafiaStrategy, DonStrategy, SheriffStrategy
@@ -137,3 +139,24 @@ def test_optimise_from_config(tmp_path):
     assert civ.value < 0.4
     assert 0 <= civ.win_rate <= 1
     assert set(results[Role.SHERIFF]) == {"reveal_prob", "nomination_prob"}
+
+
+def test_config_single_param_example():
+    """The single-parameter example config should optimise one value."""
+
+    cfg = Path(__file__).resolve().parent.parent / "example_configs" / "optimization_civilian.yaml"
+    results = optimise_from_config(cfg)
+    assert set(results) == {Role.CIVILIAN}
+    civ = results[Role.CIVILIAN]["nomination_prob"]
+    assert civ.value < 0.4
+    assert 0 <= civ.win_rate <= 1
+
+
+def test_config_single_role_all_params_example():
+    """The single-role example should yield results for all its parameters."""
+
+    cfg = Path(__file__).resolve().parent.parent / "example_configs" / "optimization_sheriff.yaml"
+    results = optimise_from_config(cfg)
+    assert set(results) == {Role.SHERIFF}
+    assert set(results[Role.SHERIFF]) == {"nomination_prob", "reveal_prob"}
+    assert all(0 <= r.win_rate <= 1 for r in results[Role.SHERIFF].values())

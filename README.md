@@ -117,8 +117,12 @@ configuration file:
 python -m mafia.optimization example_configs/optimization.yaml
 ```
 
+Additional scenarios include optimising a single parameter
+(`example_configs/optimization_civilian.yaml`) or all parameters of a single
+role (`example_configs/optimization_sheriff.yaml`).
+
 See ``mafia/optimization/README.md`` for more details on the configuration
-format and additional examples.
+format and further examples.
 
 ---
 This framework is intentionally lightweight; its main purpose is to provide a base for
