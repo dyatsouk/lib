@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Mapping, Tuple, Type
 
+from tqdm.auto import tqdm
 from ..roles import Role
 from ..strategies import BaseStrategy
 from ..simulate import simulate_games
@@ -129,7 +130,8 @@ def optimise_all(
     Each round performs a coordinate-descent pass calling
     :func:`optimise_parameter` for every parameter of each role.  Updated
     values are fed back into subsequent evaluations so later parameters see
-    the latest strategy configuration.
+    the latest strategy configuration. Progress across all parameter
+    evaluations is reported via a :mod:`tqdm` progress bar.
 
     Parameters
     ----------
@@ -169,27 +171,36 @@ def optimise_all(
     for role, (strategy, pmap) in params.items():
         config[role] = (strategy, dict(pmap))
 
-    for _ in range(rounds):
-        for role, (strategy, pmap) in params.items():
-            for param, value in pmap.items():
-                res = optimise_parameter(
-                    role,
-                    strategy,
-                    param,
-                    results[role].get(param, OptimisationResult(value, 0)).value,
-                    step=step,
-                    games=games,
-                    iterations=1,
-                    target=target,
-                    base_config=config,
-                    seed=seed,
-                )
-                results[role][param] = res
-                pmap[param] = res.value  # update start for subsequent rounds
-                current = dict(config.get(role, (strategy, {}))[1])
-                current[param] = res.value
-                config[role] = (strategy, current)
-        step /= 2
+    # Total number of optimisation steps is the number of parameters times the
+    # number of coordinate-descent rounds. This lets ``tqdm`` show accurate
+    # progress information.
+    total_steps = rounds * sum(len(pmap) for _, (_, pmap) in params.items())
+
+    # Wrap the nested optimisation loops in a progress bar so that users can
+    # estimate remaining work during expensive runs.
+    with tqdm(total=total_steps, desc="Optimising parameters") as pbar:
+        for _ in range(rounds):
+            for role, (strategy, pmap) in params.items():
+                for param, value in pmap.items():
+                    res = optimise_parameter(
+                        role,
+                        strategy,
+                        param,
+                        results[role].get(param, OptimisationResult(value, 0)).value,
+                        step=step,
+                        games=games,
+                        iterations=1,
+                        target=target,
+                        base_config=config,
+                        seed=seed,
+                    )
+                    results[role][param] = res
+                    pmap[param] = res.value  # update start for subsequent rounds
+                    current = dict(config.get(role, (strategy, {}))[1])
+                    current[param] = res.value
+                    config[role] = (strategy, current)
+                    pbar.update(1)
+            step /= 2
     return results
 
 
