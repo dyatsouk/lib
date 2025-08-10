@@ -3,6 +3,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, Mapping, Tuple, Type
 
+from tqdm.auto import tqdm
+
 from .roles import Role
 from .player import Player
 from .strategies import (
@@ -61,6 +63,9 @@ def simulate_games(
 ) -> Dict[Role, int]:
     """Run ``n`` games and tally the winners.
 
+    A progress bar is displayed via :mod:`tqdm` so that long simulations
+    provide feedback to the user.
+
     Parameters
     ----------
     n : int
@@ -78,7 +83,9 @@ def simulate_games(
         config = load_config(config)
 
     results = Counter()
-    for i in range(n):
+    # Iterate over the requested number of games while updating a progress bar
+    # so users can track long-running simulations.
+    for i in tqdm(range(n), desc="Simulating games"):
         if logger:
             logger.log(f"game {i + 1}")
         game = create_game(logger, config)

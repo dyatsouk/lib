@@ -68,7 +68,9 @@ The repository includes simple example strategies:
 
 ## Running a Simulation
 
-Use the helper script to run a batch of games and display win statistics:
+Use the helper script to run a batch of games and display win statistics. A
+progress bar from `tqdm` keeps track of the simulation progress so longer
+runs can be monitored easily:
 
 ```bash
 python -m mafia.simulate 100
@@ -110,7 +112,8 @@ The ``mafia.optimization`` package offers helpers for tuning strategy
 parameters. It runs batches of simulations and applies a simple
 hill-climbing search to discover parameter values that increase the win
 rate for a chosen role. Multiple parameters per role can be tuned in a
-single run. Optimisations can be launched from the command line using a
+single run. A `tqdm` progress bar reports how many optimisation steps have
+been completed. Optimisations can be launched from the command line using a
 configuration file:
 
 ```bash
