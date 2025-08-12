@@ -10,7 +10,7 @@ interprets generically.
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from .actions import CheckResult, DonCheckResult
 
@@ -29,61 +29,18 @@ class Role(Enum):
     # ------------------------------------------------------------------
     # Behavioural hooks -------------------------------------------------
     def perform_night_action(self, player: "Player", game: "Game") -> Dict[str, object]:
-        """Execute this role's night action.
+        """Execute this role's night action via a role-specific handler.
 
-        Parameters
-        ----------
-        player:
-            The :class:`~mafia.player.Player` performing the action.
-        game:
-            Current :class:`~mafia.game.Game` instance.  Strategies may inspect
-            the game state to decide whom to target.
-
-        Returns
-        -------
-        dict
-            A mapping describing the performed action.  Common keys are
-            ``kill``, ``kill_suggestion``, ``sheriff_check`` and ``don_check``.
-            Unknown roles simply return an empty mapping.
+        All decision making resides in functions mapped in ``_NIGHT_ACTIONS``
+        below.  This dispatch indirection keeps the enumeration free of bulky
+        ``if/elif`` chains and allows new roles to plug in their behaviour
+        without touching existing branches.
         """
 
-        actions: Dict[str, object] = {}
-        alive_candidates = [p.pid for p in game.alive_players if p.pid != player.pid]
-
-        if self == Role.SHERIFF:
-            target = player.sheriff_check(game, alive_candidates)
-            if target is not None:
-                result = game.get_player(target).role.is_mafia()
-                player.strategy.remember(target, result)  # type: ignore[attr-defined]
-                actions["sheriff_check"] = CheckResult(
-                    checker=player.pid, target=target, is_mafia=result
-                )
-
-        elif self == Role.DON:
-            kill = player.mafia_kill(game, [p.pid for p in game.alive_players])
-            if kill is not None:
-                actions["kill"] = kill
-
-            candidates = [pid for pid in alive_candidates if pid != kill]
-            target = player.don_check(game, candidates)
-            if target is not None:
-                is_sheriff = game.get_player(target).role == Role.SHERIFF
-                player.strategy.checked.add(target)  # type: ignore[attr-defined]
-                if is_sheriff:
-                    for mafia in game.alive_players:
-                        if mafia.role.is_mafia():
-                            mafia.strategy.known_sheriff = target  # type: ignore[attr-defined]
-                actions["don_check"] = DonCheckResult(
-                    checker=player.pid, target=target, is_sheriff=is_sheriff
-                )
-
-        elif self == Role.MAFIA:
-            suggestion = player.mafia_kill(game, [p.pid for p in game.alive_players])
-            if suggestion is not None:
-                actions["kill_suggestion"] = suggestion
-
-        # Civilians perform no night actions
-        return actions
+        # Gather ids of other alive players so handlers work with plain lists
+        candidates = [p.pid for p in game.alive_players if p.pid != player.pid]
+        handler = _NIGHT_ACTIONS.get(self, _no_night_action)
+        return handler(player, game, candidates)
 
     def resolve_day_action(self, player: "Player", game: "Game", event: str) -> Optional[object]:
         """React to a day-phase ``event``.
@@ -99,3 +56,86 @@ class Role(Enum):
         """Return ``True`` if a night kill should be applied after all actions."""
 
         return self == Role.SHERIFF
+
+
+# ---------------------------------------------------------------------------
+# Night action handlers ------------------------------------------------------
+
+def _sheriff_night_action(
+    player: "Player", game: "Game", candidates: List[int]
+) -> Dict[str, object]:
+    """Have the sheriff check a candidate.
+
+    The strategy may store the result for future reasoning via
+    ``player.strategy.remember``.
+    """
+
+    target = player.sheriff_check(game, candidates)
+    if target is None:
+        return {}
+    result = game.get_player(target).role.is_mafia()
+    player.strategy.remember(target, result)  # type: ignore[attr-defined]
+    return {
+        "sheriff_check": CheckResult(
+            checker=player.pid, target=target, is_mafia=result
+        )
+    }
+
+
+def _don_night_action(
+    player: "Player", game: "Game", candidates: List[int]
+) -> Dict[str, object]:
+    """Resolve the don's kill and sheriff search.
+
+    Information about a discovered sheriff is broadcast to other mafia
+    strategies by setting ``known_sheriff`` on them.
+    """
+
+    actions: Dict[str, object] = {}
+    kill = player.mafia_kill(game, [p.pid for p in game.alive_players])
+    if kill is not None:
+        actions["kill"] = kill
+    remaining = [pid for pid in candidates if pid != kill]
+    target = player.don_check(game, remaining)
+    if target is not None:
+        is_sheriff = game.get_player(target).role == Role.SHERIFF
+        player.strategy.checked.add(target)  # type: ignore[attr-defined]
+        if is_sheriff:
+            for mafia in game.alive_players:
+                if mafia.role.is_mafia():
+                    mafia.strategy.known_sheriff = target  # type: ignore[attr-defined]
+        actions["don_check"] = DonCheckResult(
+            checker=player.pid, target=target, is_sheriff=is_sheriff
+        )
+    return actions
+
+
+def _mafia_night_action(
+    player: "Player", game: "Game", candidates: List[int]
+) -> Dict[str, object]:
+    """Let a mafia member suggest a kill target."""
+
+    suggestion = player.mafia_kill(game, [p.pid for p in game.alive_players])
+    if suggestion is None:
+        return {}
+    return {"kill_suggestion": suggestion}
+
+
+def _no_night_action(
+    player: "Player", game: "Game", candidates: List[int]
+) -> Dict[str, object]:
+    """Default handler for roles without night actions."""
+
+    return {}
+
+
+NightAction = Callable[["Player", "Game", List[int]], Dict[str, object]]
+
+# Mapping from Role to its dedicated night action function
+_NIGHT_ACTIONS: Dict[Role, NightAction] = {
+    Role.SHERIFF: _sheriff_night_action,
+    Role.DON: _don_night_action,
+    Role.MAFIA: _mafia_night_action,
+    Role.CIVILIAN: _no_night_action,
+}
+
