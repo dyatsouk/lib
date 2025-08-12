@@ -28,7 +28,7 @@ mafia/
 ├── game.py         # Main game engine coordinating day/night cycles
 ├── logger.py       # Default event-based logger
 ├── player.py       # Player representation tying a role to a strategy
-├── roles.py        # Role enum and helpers
+├── roles.py        # Role enum and behaviour hooks
 ├── strategies.py   # Base strategy classes and simple default strategies
 ├── config.py       # Load strategy configuration from JSON/YAML files
 ├── simulate.py     # Utility for running multiple games and collecting stats
@@ -72,6 +72,15 @@ The repository includes simple example strategies:
   simulations to tune how often unaided civilians nominate at random, and the
   mafia and don variants accept ``nomination_prob`` to control how frequently
   they nominate civilians during the day.
+
+### Role Behaviour
+
+Roles expose a ``perform_night_action`` hook implemented by small behaviour
+classes per role. The :class:`mafia.game.Game` engine calls this method on each
+player and merely processes the returned outcomes without inspecting role
+types. This design keeps role specific logic encapsulated within the
+role/strategy classes and allows new roles to be added without modifying the
+core engine.
 
 ## Running a Simulation
 
