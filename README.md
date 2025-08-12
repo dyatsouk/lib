@@ -24,7 +24,9 @@ The implementation roughly follows the [sports mafia rules](https://dom-mafia.ru
 ```
 mafia/
 ├── actions.py      # Dataclasses describing speeches, votes and round logs
+├── events.py       # Lightweight publish/subscribe dispatcher
 ├── game.py         # Main game engine coordinating day/night cycles
+├── logger.py       # Default event-based logger
 ├── player.py       # Player representation tying a role to a strategy
 ├── roles.py        # Role enum and helpers
 ├── strategies.py   # Base strategy classes and simple default strategies
@@ -47,11 +49,11 @@ strategy implementing the following methods:
 * `don_check(player, game, candidates)` *(don only)*
 
 `game` exposes the full history of previous rounds so strategies can base their decisions on
-past events.  It also emits a callback whenever a new speech is recorded.  Strategies that
-define ``on_speech(day_no, index, speech)`` will receive these events and can update their
-internal state only when new information appears instead of rescanning the entire history.
-This event‑driven approach is used by the "SingleSheriff" strategies to efficiently track
-sheriff claims.
+past events.  It also emits structured events through a lightweight dispatcher.  Strategies
+that define ``on_speech(day_no, index, speech)`` will receive speech events and can update
+their internal state only when new information appears instead of rescanning the entire
+history.  This event‑driven approach is used by the "SingleSheriff" strategies to efficiently
+track sheriff claims.
 
 The repository includes simple example strategies:
 
@@ -110,6 +112,29 @@ The same configuration can be loaded programmatically with
 classes are located by name at runtime, so adding a new strategy class to
 ``mafia.strategies`` automatically makes it available to configuration files
 without further changes.
+
+## Event System and Custom Logging
+
+The game engine does not print messages directly.  Instead it publishes events
+such as ``speech_added``, ``vote_cast`` and ``night_action`` through an
+``EventDispatcher``.  The provided :class:`mafia.logger.GameLogger` subscribes
+to these events and renders them to stdout or a file.  Custom observers can be
+attached to perform analytics or integrate with other logging frameworks.
+
+```python
+from mafia.events import EventDispatcher
+from mafia.game import Game
+from mafia.logger import GameLogger
+
+dispatcher = EventDispatcher()
+logger = GameLogger(verbose=True)
+logger.attach(dispatcher)
+game = Game(players, dispatcher)
+winner = game.run()
+```
+
+Omitting the logger suppresses all output while still allowing tests or other
+listeners to consume events programmatically.
 
 ## Persisting Game Histories
 
