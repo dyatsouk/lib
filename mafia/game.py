@@ -235,7 +235,9 @@ class Game:
 
         if eliminated:
             for pid in eliminated:
-                self.players[pid].alive = False
+                player = self.players[pid]
+                player.eliminate()
+                player.resolve_day_action(self, "eliminated")
             self.dispatcher.emit("players_eliminated", day=day_no, players=eliminated)
         else:
             self.dispatcher.emit("no_elimination", day=day_no)
@@ -266,97 +268,80 @@ class Game:
 
     # Night phase
     def night_phase(self, night_no: int) -> NightLog:
-        self.dispatcher.emit("night_started", night=night_no)
-        sheriff_check = None
-        don_check = None
-        kill = None
+        """Execute night actions by delegating to player roles.
 
-        # Mafia kill happens first
-        mafia_players = [p for p in self.alive_players if p.role.is_mafia()]
-        if mafia_players:
-            candidates = [p.pid for p in self.alive_players]
-            don = next((p for p in mafia_players if p.role == Role.DON), None)
-            if don:
-                kill = don.mafia_kill(self, candidates)
-            else:
-                suggestions = [m.mafia_kill(self, candidates) for m in mafia_players]
-                suggestions = [s for s in suggestions if s is not None]
-                if suggestions:
-                    kill = max(set(suggestions), key=suggestions.count)
-            if kill is not None and self.is_alive(kill):
-                victim = self.get_player(kill)
-                if victim.role == Role.SHERIFF:
-                    # Sheriff remains alive until the end of the night to perform a final check
-                    pass
-                else:
-                    victim.alive = False
-                self.dispatcher.emit(
-                    "night_action",
-                    night=night_no,
-                    action="mafia_kill",
-                    target=kill,
-                    success=True,
-                )
-            else:
-                self.dispatcher.emit(
-                    "night_action",
-                    night=night_no,
-                    action="mafia_kill",
-                    target=kill,
-                    success=False,
-                )
+        The engine merely aggregates the outcomes returned by
+        :meth:`Player.perform_night_action` and applies their effects.  This keeps
+        role specific logic within the role classes and strategies.
+        """
+
+        self.dispatcher.emit("night_started", night=night_no)
+
+        kill: Optional[int] = None
+        kill_suggestions: list[int] = []
+        sheriff_check: CheckResult | None = None
+        don_check: DonCheckResult | None = None
+
+        # Gather actions from all players ---------------------------------
+        for player in self.alive_players:
+            actions = player.perform_night_action(self)
+            if "kill" in actions and actions["kill"] is not None:
+                kill = actions["kill"]  # Don provides the final kill
+            if "kill_suggestion" in actions and actions["kill_suggestion"] is not None:
+                kill_suggestions.append(actions["kill_suggestion"])
+            if "sheriff_check" in actions:
+                sheriff_check = actions["sheriff_check"]  # type: ignore[assignment]
+            if "don_check" in actions:
+                don_check = actions["don_check"]  # type: ignore[assignment]
+
+        # Resolve mafia kill ----------------------------------------------
+        if kill is None and kill_suggestions:
+            kill = max(set(kill_suggestions), key=kill_suggestions.count)
+
+        if kill is not None and self.is_alive(kill):
+            victim = self.get_player(kill)
+            if not victim.role.delays_night_death():
+                victim.eliminate()
+            self.dispatcher.emit(
+                "night_action",
+                night=night_no,
+                action="mafia_kill",
+                target=kill,
+                success=True,
+            )
         else:
             self.dispatcher.emit(
                 "night_action",
                 night=night_no,
                 action="mafia_kill",
-                target=None,
+                target=kill,
                 success=False,
             )
 
-        # Don check after the kill
-        don = next((p for p in self.alive_players if p.role == Role.DON), None)
-        if don:
-            candidates = [p.pid for p in self.players if p.pid != don.pid and p.pid != kill]
-            target = don.don_check(self, candidates)
-            if target is not None:
-                is_sheriff = self.get_player(target).role == Role.SHERIFF
-                don.strategy.checked.add(target)  # type: ignore
-                if is_sheriff:
-                    for mafia in self.alive_players:
-                        if mafia.role.is_mafia():
-                            mafia.strategy.known_sheriff = target  # type: ignore
-                don_check = DonCheckResult(checker=don.pid, target=target, is_sheriff=is_sheriff)
-                self.dispatcher.emit(
-                    "night_action",
-                    night=night_no,
-                    action="don_check",
-                    checker=don.pid,
-                    target=target,
-                    is_sheriff=is_sheriff,
-                )
+        # Emit events for checks ------------------------------------------
+        if don_check:
+            self.dispatcher.emit(
+                "night_action",
+                night=night_no,
+                action="don_check",
+                checker=don_check.checker,
+                target=don_check.target,
+                is_sheriff=don_check.is_sheriff,
+            )
 
-        # Sheriff check last
-        sheriff = next((p for p in self.alive_players if p.role == Role.SHERIFF), None)
-        if sheriff:
-            candidates = [p.pid for p in self.players if p.pid != sheriff.pid and p.pid != kill]
-            target = sheriff.sheriff_check(self, candidates)
-            if target is not None:
-                result = self.get_player(target).role.is_mafia()
-                sheriff.strategy.remember(target, result)  # type: ignore
-                sheriff_check = CheckResult(checker=sheriff.pid, target=target, is_mafia=result)
-                self.dispatcher.emit(
-                    "night_action",
-                    night=night_no,
-                    action="sheriff_check",
-                    checker=sheriff.pid,
-                    target=target,
-                    is_mafia=result,
-                )
+        if sheriff_check:
+            self.dispatcher.emit(
+                "night_action",
+                night=night_no,
+                action="sheriff_check",
+                checker=sheriff_check.checker,
+                target=sheriff_check.target,
+                is_mafia=sheriff_check.is_mafia,
+            )
 
-        # Apply delayed kill (sheriff remains alive for the check)
+        # Apply delayed kill (e.g. sheriff)
         if kill is not None and self.is_alive(kill):
-            self.get_player(kill).alive = False
+            self.get_player(kill).eliminate()
 
         return NightLog(sheriff_check=sheriff_check, don_check=don_check, kill=kill)
 

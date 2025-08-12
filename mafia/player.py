@@ -1,3 +1,12 @@
+"""Player model tying a role to a decision strategy.
+
+The original implementation exposed only thin wrappers around the strategy
+object.  For more complex simulations the :class:`~mafia.game.Game` engine now
+interacts with players through a small behavioural interface.  This keeps role
+specific logic close to the role itself and allows the engine to remain agnostic
+of individual roles.
+"""
+
 from dataclasses import dataclass
 from .roles import Role
 from .strategies import BaseStrategy
@@ -7,9 +16,20 @@ from .strategies import BaseStrategy
 class Player:
     """Representation of a single game participant.
 
-    Each player has a unique ``pid``, an assigned :class:`Role` and a
-    strategy object that decides their actions.  The ``alive`` flag tracks
-    whether the player is still active in the game.
+    Parameters
+    ----------
+    pid:
+        Unique identifier used throughout a game.
+    role:
+        The player's :class:`~mafia.roles.Role`.
+    strategy:
+        Strategy object providing decision methods.  Strategies are queried by
+        the role methods to decide whom to nominate, vote for or target at
+        night.
+    alive:
+        Flag indicating whether the player is still in the game.  It should not
+        be modified directly; use :meth:`eliminate` instead so the change is
+        explicit in the game flow.
     """
 
     pid: int
@@ -53,3 +73,37 @@ class Player:
 
     def last_words(self, game):
         return self.strategy.last_words(self, game)
+
+    # ------------------------------------------------------------------
+    # Behavioural helpers used by ``Game``.  These proxy to the role so the
+    # engine never needs to perform ``if role == …`` checks.
+
+    def perform_night_action(self, game):
+        """Execute the player's night action and return any outcomes.
+
+        The return value is a mapping whose interpretation is owned by the
+        :class:`~mafia.game.Game` engine.  Typical keys include ``kill``,
+        ``kill_suggestion``, ``sheriff_check`` and ``don_check``.
+        """
+
+        return self.role.perform_night_action(self, game)
+
+    def resolve_day_action(self, game, event):
+        """Allow the role to process a day-phase ``event``.
+
+        ``event`` is a free-form string such as ``"eliminated"``.  Most roles do
+        not react to day events and simply return ``None``.  The method exists so
+        future roles can hook into day transitions without the engine needing to
+        know about them.
+        """
+
+        return self.role.resolve_day_action(self, game, event)
+
+    def eliminate(self) -> None:
+        """Remove the player from the game.
+
+        This is the canonical way to update ``alive`` so callers do not mutate
+        the attribute directly.
+        """
+
+        self.alive = False
