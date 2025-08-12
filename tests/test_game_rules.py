@@ -3,6 +3,7 @@ from mafia.player import Player
 from mafia.roles import Role
 from mafia.actions import SpeechAction, RoundLog
 from mafia.strategies import BaseStrategy, SheriffStrategy
+from mafia.events import EventDispatcher
 
 
 class NominateAbstainStrategy(BaseStrategy):
@@ -29,16 +30,6 @@ class AbstainStrategy(BaseStrategy):
 
     def vote(self, player, game, nominations):
         return None
-
-
-class ListLogger:
-    """Simple logger collecting messages for assertions."""
-
-    def __init__(self):
-        self.messages = []
-
-    def log(self, message):  # pragma: no cover - trivial
-        self.messages.append(message)
 
 
 class KillSheriffStrategy(BaseStrategy):
@@ -137,21 +128,25 @@ def test_abstaining_vote_defaults_to_last_nominee():
     assert day.eliminated == [2]
 
 
-# Test 2: logging when night victim has no claims
+# Test 2: event emitted when night victim has no claims
 
-def test_night_victim_without_claims_logged():
-    logger = ListLogger()
+def test_night_victim_without_claims_emits_event():
+    """Morning speech from a night victim fires a ``speech_added`` event."""
+
+    dispatcher = EventDispatcher()
+    events = []
+    dispatcher.subscribe("speech_added", lambda **p: events.append(p))
     players = [
         Player(0, Role.CIVILIAN, BaseStrategy()),
         Player(1, Role.DON, KillSheriffStrategy()),
         Player(2, Role.CIVILIAN, BaseStrategy()),
     ]
-    game = Game(players, logger=logger)
+    game = Game(players, dispatcher=dispatcher)
     day1 = game.day_phase(1)
     night1 = game.night_phase(1)
     game.history.append(RoundLog(day=day1, night=night1))
     game.day_phase(2)
-    assert any("player 1 has no claims" in m for m in logger.messages)
+    assert any(e["speech"].speaker == 0 and not e["speech"].action.claims for e in events)
 
 
 # Test 3: sheriff gets final check when killed

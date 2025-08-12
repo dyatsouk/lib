@@ -16,6 +16,7 @@ from .strategies import (
 )
 from .game import Game
 from .logger import GameLogger
+from .events import EventDispatcher
 from .history import GameHistoryDB
 from .config import load_config
 
@@ -52,7 +53,10 @@ def create_game(
         else:
             strat = MafiaStrategy()
         players.append(Player(pid=pid, role=role, strategy=strat))
-    return Game(players, logger=logger)
+    dispatcher = EventDispatcher()
+    if logger:
+        logger.attach(dispatcher)
+    return Game(players, dispatcher=dispatcher)
 
 
 def simulate_games(

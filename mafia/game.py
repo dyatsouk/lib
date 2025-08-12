@@ -3,7 +3,7 @@ from typing import Callable, List, Optional
 
 from .roles import Role
 from .player import Player
-from .logger import GameLogger
+from .events import EventDispatcher
 from .actions import (
     SpeechAction,
     SpeechLog,
@@ -16,12 +16,17 @@ from .actions import (
 )
 
 class Game:
-    """Main game engine coordinating day and night cycles."""
+    """Main game engine coordinating day and night cycles.
 
-    def __init__(self, players: List[Player], logger: Optional[GameLogger] = None):
+    The engine emits events via :class:`~mafia.events.EventDispatcher` instead
+    of writing to a logger directly.  This allows external observers to attach
+    custom loggers or analytics without modifying the game logic.
+    """
+
+    def __init__(self, players: List[Player], dispatcher: EventDispatcher | None = None):
         self.players = players
         self.history: List[RoundLog] = []
-        self.logger = logger
+        self.dispatcher = dispatcher or EventDispatcher()
         self.day_start_pid = 0
         self.current_speeches: List[SpeechLog] = []
         # Callbacks fired whenever a new speech is added.  Strategies that
@@ -80,6 +85,8 @@ class Game:
 
         for callback in self._speech_listeners:
             callback(day_no, index, speech)
+        # Publish structured event for external observers
+        self.dispatcher.emit("speech_added", day=day_no, index=index, speech=speech)
 
     # Convenience for tests and manual injection -----------------------
     def add_speech(self, speech: SpeechLog, day_no: int = 1):
@@ -93,14 +100,12 @@ class Game:
         self._notify_speech(day_no, len(self.current_speeches) - 1, speech)
 
     def run(self) -> Role:
-        if self.logger:
-            mafia_players = [p.pid + 1 for p in self.players if p.role == Role.MAFIA]
-            don_player = next(p.pid + 1 for p in self.players if p.role == Role.DON)
-            sheriff_player = next(p.pid + 1 for p in self.players if p.role == Role.SHERIFF)
-            mafia_list = ", ".join(str(pid) for pid in mafia_players)
-            self.logger.log(f"mafia: {mafia_list}")
-            self.logger.log(f"don: {don_player}")
-            self.logger.log(f"sheriff: {sheriff_player}")
+        mafia_players = [p.pid for p in self.players if p.role == Role.MAFIA]
+        don_player = next(p.pid for p in self.players if p.role == Role.DON)
+        sheriff_player = next(p.pid for p in self.players if p.role == Role.SHERIFF)
+        self.dispatcher.emit(
+            "game_started", mafia=mafia_players, don=don_player, sheriff=sheriff_player
+        )
         round_no = 1
         while True:
             day_log = self.day_phase(round_no)
@@ -124,8 +129,7 @@ class Game:
         required to remove them.
         """
 
-        if self.logger:
-            self.logger.log(f"day {day_no}")
+        self.dispatcher.emit("day_started", day=day_no)
         speeches = []
         nominations = []
         self.current_speeches = []
@@ -141,15 +145,7 @@ class Game:
             speech = SpeechLog(speaker=victim.pid, action=action)
             speeches.append(speech)
             self.add_speech(speech, day_no)
-            if self.logger:
-                if action.claims:
-                    for claim in action.claims:
-                        res = "mafia" if claim.is_mafia else "not mafia"
-                        self.logger.log(
-                            f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
-                        )
-                else:
-                    self.logger.log(f"player {victim.pid + 1} has no claims")
+            # Claims are reported via the speech_added event
 
         alive = self.alive_players
         start_index = 0
@@ -166,16 +162,8 @@ class Game:
             if action.nomination is not None and self.is_alive(action.nomination):
                 if action.nomination not in nominations:
                     nominations.append(action.nomination)
-                if self.logger:
-                    self.logger.log(
-                        f"player {player.pid + 1} nominates player {action.nomination + 1}"
-                    )
-            if action.claims and self.logger:
-                for claim in action.claims:
-                    res = "mafia" if claim.is_mafia else "not mafia"
-                    self.logger.log(
-                        f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
-                    )
+                # Nomination details are conveyed through speech_added event
+            # Claims are reported via speech_added event
         votes: List[Vote] = []
         eliminated: List[int] = []
 
@@ -186,8 +174,7 @@ class Game:
 
             while current_candidates:
                 vote_counts = {pid: 0 for pid in current_candidates}
-                if self.logger:
-                    self.logger.log(f"day {day_no} voting")
+                self.dispatcher.emit("info", message=f"day {day_no} voting")
                 for player in self.alive_players:
                     vote_target = player.vote(self, current_candidates)
                     if current_candidates:
@@ -197,15 +184,15 @@ class Game:
                             vote_target = current_candidates[-1]
                         votes.append(Vote(voter=player.pid, target=vote_target))
                         vote_counts[vote_target] += 1
-                        if self.logger:
-                            self.logger.log(
-                                f"player {player.pid + 1} votes for player {vote_target + 1}"
-                            )
+                        self.dispatcher.emit(
+                            "vote_cast", day=day_no, voter=player.pid, target=vote_target
+                        )
                     else:
                         # No nominations: players effectively abstain.
                         votes.append(Vote(voter=player.pid, target=None))
-                        if self.logger:
-                            self.logger.log(f"player {player.pid + 1} abstains")
+                        self.dispatcher.emit(
+                            "vote_cast", day=day_no, voter=player.pid, target=None
+                        )
 
                 if not vote_counts:
                     break
@@ -216,8 +203,7 @@ class Game:
                     break
 
                 # Rule 4.4.12: tied players get extra speeches and a revote.
-                if self.logger:
-                    self.logger.log("tie detected, revoting")
+                self.dispatcher.emit("info", message="tie detected, revoting")
                 for pid in nominations:
                     if pid in top:
                         # Extra 30-second speech; nominations during this phase are
@@ -228,17 +214,14 @@ class Game:
                         speech = SpeechLog(speaker=player.pid, action=action)
                         speeches.append(speech)
                         self.add_speech(speech, day_no)
-                        if action.claims and self.logger:
-                            for claim in action.claims:
-                                res = "mafia" if claim.is_mafia else "not mafia"
-                                self.logger.log(
-                                    f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
-                                )
+                        if action.claims:
+                            pass  # claims handled by speech_added event
 
                 if previous_candidates and set(top) == set(previous_candidates):
                     # Rule 4.4.12.3: if the same set ties again, vote on eliminating all.
-                    if self.logger:
-                        self.logger.log("revote tie, voting on elimination")
+                    self.dispatcher.emit(
+                        "info", message="revote tie, voting on elimination"
+                    )
                     yes_votes = sum(
                         1 for p in self.alive_players if p.vote_elimination(self, top)
                     )
@@ -253,15 +236,9 @@ class Game:
         if eliminated:
             for pid in eliminated:
                 self.players[pid].alive = False
-            if self.logger:
-                if len(eliminated) == 1:
-                    self.logger.log(f"player {eliminated[0] + 1} is eliminated")
-                else:
-                    elim_str = ", ".join(str(pid + 1) for pid in eliminated)
-                    self.logger.log(f"players {elim_str} are eliminated")
+            self.dispatcher.emit("players_eliminated", day=day_no, players=eliminated)
         else:
-            if self.logger:
-                self.logger.log("no elimination")
+            self.dispatcher.emit("no_elimination", day=day_no)
 
         # Eliminated players' last words in the order they were nominated.
         if eliminated:
@@ -272,12 +249,8 @@ class Game:
                 speech = SpeechLog(speaker=player.pid, action=action)
                 speeches.append(speech)
                 self.add_speech(speech, day_no)
-                if action.claims and self.logger:
-                    for claim in action.claims:
-                        res = "mafia" if claim.is_mafia else "not mafia"
-                        self.logger.log(
-                            f"player {claim.claimant + 1} claims {claim.target + 1} is {res}"
-                        )
+                if action.claims:
+                    pass  # claims handled by speech_added event
 
         # determine next day's starting player
         if ordered_players:
@@ -293,8 +266,7 @@ class Game:
 
     # Night phase
     def night_phase(self, night_no: int) -> NightLog:
-        if self.logger:
-            self.logger.log(f"night {night_no}")
+        self.dispatcher.emit("night_started", night=night_no)
         sheriff_check = None
         don_check = None
         kill = None
@@ -318,10 +290,29 @@ class Game:
                     pass
                 else:
                     victim.alive = False
-                if self.logger:
-                    self.logger.log(f"mafia kill player {kill + 1}")
-            elif self.logger:
-                self.logger.log("mafia kill failed")
+                self.dispatcher.emit(
+                    "night_action",
+                    night=night_no,
+                    action="mafia_kill",
+                    target=kill,
+                    success=True,
+                )
+            else:
+                self.dispatcher.emit(
+                    "night_action",
+                    night=night_no,
+                    action="mafia_kill",
+                    target=kill,
+                    success=False,
+                )
+        else:
+            self.dispatcher.emit(
+                "night_action",
+                night=night_no,
+                action="mafia_kill",
+                target=None,
+                success=False,
+            )
 
         # Don check after the kill
         don = next((p for p in self.alive_players if p.role == Role.DON), None)
@@ -336,11 +327,14 @@ class Game:
                         if mafia.role.is_mafia():
                             mafia.strategy.known_sheriff = target  # type: ignore
                 don_check = DonCheckResult(checker=don.pid, target=target, is_sheriff=is_sheriff)
-                if self.logger:
-                    result = "is" if is_sheriff else "is not"
-                    self.logger.log(
-                        f"don checks player {target + 1}: {result} sheriff"
-                    )
+                self.dispatcher.emit(
+                    "night_action",
+                    night=night_no,
+                    action="don_check",
+                    checker=don.pid,
+                    target=target,
+                    is_sheriff=is_sheriff,
+                )
 
         # Sheriff check last
         sheriff = next((p for p in self.alive_players if p.role == Role.SHERIFF), None)
@@ -351,11 +345,14 @@ class Game:
                 result = self.get_player(target).role.is_mafia()
                 sheriff.strategy.remember(target, result)  # type: ignore
                 sheriff_check = CheckResult(checker=sheriff.pid, target=target, is_mafia=result)
-                if self.logger:
-                    res = "mafia" if result else "not mafia"
-                    self.logger.log(
-                        f"sheriff checks player {target + 1}: {res}"
-                    )
+                self.dispatcher.emit(
+                    "night_action",
+                    night=night_no,
+                    action="sheriff_check",
+                    checker=sheriff.pid,
+                    target=target,
+                    is_mafia=result,
+                )
 
         # Apply delayed kill (sheriff remains alive for the check)
         if kill is not None and self.is_alive(kill):
