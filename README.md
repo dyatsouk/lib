@@ -75,11 +75,12 @@ The repository includes simple example strategies:
 
 ### Role Behaviour
 
-Roles now expose ``perform_night_action`` and ``resolve_day_action`` hooks. The
-:class:`mafia.game.Game` engine calls these methods on each player and merely
-processes the returned outcomes.  This design keeps all role specific logic
-encapsulated within the role/strategy classes, allowing new roles to be added
-without modifying the core engine.
+Roles expose a ``perform_night_action`` hook implemented by small behaviour
+classes per role. The :class:`mafia.game.Game` engine calls this method on each
+player and merely processes the returned outcomes without inspecting role
+types. This design keeps role specific logic encapsulated within the
+role/strategy classes and allows new roles to be added without modifying the
+core engine.
 
 ## Running a Simulation
 

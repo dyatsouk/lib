@@ -88,17 +88,6 @@ class Player:
 
         return self.role.perform_night_action(self, game)
 
-    def resolve_day_action(self, game, event):
-        """Allow the role to process a day-phase ``event``.
-
-        ``event`` is a free-form string such as ``"eliminated"``.  Most roles do
-        not react to day events and simply return ``None``.  The method exists so
-        future roles can hook into day transitions without the engine needing to
-        know about them.
-        """
-
-        return self.role.resolve_day_action(self, game, event)
-
     def eliminate(self) -> None:
         """Remove the player from the game.
 

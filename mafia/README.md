@@ -6,8 +6,9 @@ This package contains the core game engine and related utilities.
 * `events.py` – tiny publish/subscribe dispatcher used by the game.
 * `logger.py` – default logger subscribing to game events.
 * `actions.py`, `player.py`, `roles.py` – fundamental game data structures. Role
-  classes expose behavioural hooks so the engine can trigger actions without
-  knowing about concrete role types.
+  classes expose ``perform_night_action`` hooks implemented by small behaviour
+  classes so the engine can trigger actions without knowing about concrete
+  role types.
 * `simulate.py` – helpers for running batches of games.
 
 The event system allows custom observers and loggers to be attached without

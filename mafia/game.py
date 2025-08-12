@@ -237,7 +237,6 @@ class Game:
             for pid in eliminated:
                 player = self.players[pid]
                 player.eliminate()
-                player.resolve_day_action(self, "eliminated")
             self.dispatcher.emit("players_eliminated", day=day_no, players=eliminated)
         else:
             self.dispatcher.emit("no_elimination", day=day_no)

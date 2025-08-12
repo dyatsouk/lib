@@ -75,3 +75,32 @@ def test_game_delegates_night_actions(monkeypatch):
     assert night.sheriff_check and night.sheriff_check.target == 1
     assert night.don_check and night.don_check.target == 3
     assert not players[0].alive
+
+
+def test_night_action_receives_eliminated_candidates():
+    """Roles receive all player ids, even for eliminated players."""
+
+    class RecordingSheriffStrategy(BaseStrategy):
+        def __init__(self):
+            self.seen: list[int] | None = None
+
+        def speak(self, player, game):
+            return SpeechAction()
+
+        def vote(self, player, game, nominations):
+            return None
+
+        def sheriff_check(self, player, game, candidates):
+            self.seen = list(candidates)
+            return None
+
+    players = [
+        Player(0, Role.SHERIFF, RecordingSheriffStrategy()),
+        Player(1, Role.CIVILIAN, PassiveStrategy()),
+        Player(2, Role.CIVILIAN, PassiveStrategy()),
+    ]
+    game = Game(players)
+    players[2].eliminate()
+
+    players[0].perform_night_action(game)
+    assert players[0].strategy.seen == [1, 2]
